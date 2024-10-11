@@ -26,6 +26,7 @@
 void leerCSV(const char *nombreArchivo)
 {
     FILE *file = fopen(nombreArchivo, "r");
+    // r = read
 
     if (file == NULL)
     {
@@ -70,6 +71,7 @@ void comandos()
 
     while (1)
     {
+        printf("\nRicardo Perez rickypcyt@gmail.com\n");
         printf(WHT "\nIntroduce el comando deseado: " reset);
         scanf(" %29s", mode);
 
