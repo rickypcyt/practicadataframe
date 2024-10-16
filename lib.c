@@ -23,55 +23,14 @@
 // Tamaño máximo para la línea del archivo
 #define MAX_LINE_LENGTH 1024
 
-void leerCSV(const char *nombreArchivo)
-{
-    FILE *file = fopen(nombreArchivo, "r");
-    // r = read
-
-    if (file == NULL)
-    {
-        perror(RED "Error al abrir el archivo" reset WHT);
-        return;
-    }
-
-    char *line = NULL;
-    size_t len = 0;
-
-    while (getline(&line, &len, file) != -1)
-    {
-        // Quitar el salto de línea
-        line[strcspn(line, "\n")] = 0;
-
-        // Tokenizar la línea
-        char *token = strtok(line, ",");
-        while (token != NULL)
-        {
-            printf("%s\t", token);
-            token = strtok(NULL, ",");
-        }
-        printf("\n");
-    }
-
-    free(line); // Liberar la memoria asignada por getline
-    fclose(file);
-}
-
-void solicitarNombreArchivo(char *nombreArchivo, size_t size)
-{
-    printf("Introduce el nombre del archivo CSV: ");
-    scanf(" %1023s", nombreArchivo);
-    // Agregar la extensión .csv al nombre del archivo
-    strncat(nombreArchivo, ".csv", size - strlen(nombreArchivo) - 1);
-}
-
 void comandos()
 {
     char mode[30];
     char nombreArchivo[MAX_LINE_LENGTH] = ""; // Inicializa el nombre del archivo
+    printf("\nRicardo Perez rickypcyt@gmail.com\n");
 
     while (1)
     {
-        printf("\nRicardo Perez rickypcyt@gmail.com\n");
         printf(WHT "\nIntroduce el comando deseado: " reset);
         scanf(" %29s", mode);
 
@@ -94,4 +53,51 @@ void comandos()
             printf(RED "ERROR: Comando no reconocido. Intenta de nuevo.\n" reset WHT);
         }
     }
+}
+
+void leerCSV(const char *nombreArchivo)
+{
+    FILE *file = fopen(nombreArchivo, "r");
+    // r = read
+
+    if (file == NULL)
+    {
+        perror(RED "Error al abrir el archivo" reset WHT);
+        return;
+    }
+
+    char *line = NULL;
+    size_t len = 0;
+
+    // Esta línea inicia un bucle que lee cada línea del archivo hasta que llegue al final
+    while (getline(&line, &len, file) != -1)
+    {
+        // Quita el salto de línea y trunca la cadena
+        line[strcspn(line, "\n")] = 0;
+
+        // Tokenizar la línea
+        char *token = strtok(line, ",");
+        while (token != NULL)
+        {
+            printf("%s\t", token);     // imprime token
+            token = strtok(NULL, ","); // pasa al siguiente
+        }
+
+        printf("\n");
+    }
+
+    free(line); // Liberar la memoria asignada por getline
+    fclose(file);
+}
+
+void solicitarNombreArchivo(char *nombreArchivo, size_t size)
+{
+    printf("Introduce el nombre del archivo CSV: ");
+    scanf(" %1023s", nombreArchivo);
+    // Agregar la extensión .csv al nombre del archivo
+    strncat(nombreArchivo, ".csv", size - strlen(nombreArchivo) - 1);
+}
+
+void crearDataframe()
+{
 }
