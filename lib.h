@@ -1,55 +1,30 @@
-// fichero cabecera con las declaraciones de tipos y prototipos de funciones 
-//principales de la práctica. Todo el código que se ha escrito en este enunciado 
-//(páginas 2 y 3) debe incluirse en este fichero.
-// lib.h actúa como un puente entre main.c y lib.c, ya que declara las funciones que main.c utilizará.
 #ifndef LIB_H
 #define LIB_H
 
-#include <time.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-// Tipo enumerado para representar los diferentes tipos de datos en las columnas
-typedef enum {
-    TEXTO,
-    NUMERICO,
-    FECHA
-} TipoDato;
+// Colores para salida
+#define BLK "\e[0;30m"
+#define RED "\e[0;31m"
+#define GRN "\e[0;32m"
+#define YEL "\e[0;33m"
+#define BLU "\e[0;34m"
+#define MAG "\e[0;35m"
+#define CYN "\e[0;36m"
+#define WHT "\e[0;37m"
 
-// Estructura para representar una columna del dataframe
-typedef struct {
-    char nombre[30];
-    TipoDato tipo;
-    void *datos;
-    unsigned char *esNulo;
-    int numFilas;
-} Columna;
+// Reset de color
+#define reset "\e[0m"
 
-// Estructura para representar el dataframe como un conjunto de columnas
-typedef struct {
-    Columna *columnas;
-    int numColumnas;
-    int numFilas;
-    int *indice;
-} Dataframe;
+// Tamaño máximo para la línea del archivo
+#define MAX_LINE_LENGTH 1024
 
-// Alias para tipo FECHA
-typedef struct tm Fecha;
-
-// Estructura para la lista de dataframes
-typedef struct NodoLista {
-    Dataframe *df;
-    struct NodoLista *siguiente;
-} Nodo;
-
-typedef struct {
-    int numDFs;
-    Nodo *primero;
-} Lista;
-
-// Declaración de las funciones
+// Declaraciones de funciones
+void comandos();
 void leerCSV(const char *nombreArchivo);
 void solicitarNombreArchivo(char *nombreArchivo, size_t size);
-void comandos(void);
+void crearDataframe();  // Puedes implementar esta función si es necesario
 
 #endif // LIB_H
-
-
