@@ -23,7 +23,7 @@ void comandosCLI();
 void leerCSV(const char *nombreArchivo);
 void solicitarNombreArchivo(char *nombreArchivo, size_t size);
 void verificarNulos(char *linea); // verificar y corregir valores nulos
-
+void contarFilasYColumnas(FILE *file, int *numFilas, int *numColumnas); // Declaración de la función
 // Tipo enumerado para representar los diferentes tipos de datos en las columnas
 typedef enum
 {
@@ -118,6 +118,16 @@ void leerCSV(const char *nombreArchivo)
         // Imprimir la línea corregida
         printf("%s", linea);
     }
+
+    int numColumnas = 0;
+    int numFilas = 0;
+
+    contarFilasYColumnas(file, &numFilas, &numColumnas); // Llamar a la función de conteo
+
+    // Mostrar el número de filas y columnas
+    printf("\nEl archivo tiene %d filas y %d columnas.\n", numFilas, numColumnas);
+
+
     fclose(file);
 }
 
@@ -146,7 +156,7 @@ void verificarNulos(char *linea)
     for (int i = 0; i < length; i++) // recorre linea original
     {
         // Detectar comas seguidas o coma al final de la línea
-        if (linea[i] == ',' && (linea[i + 1] == ',' || linea[i + 1] == '\n'))
+        if (linea[i] == ',' && (linea[i + 1] == ',' || linea[i] == ',' && (linea[i + 1] == '\r' || linea[i] == ',' && (linea[i + 1] == '\0' ))))
         {
             resultado[j++] = ','; // Mantener la coma
             resultado[j++] = '1'; // Reemplazar el valor nulo con '1'
@@ -161,4 +171,31 @@ void verificarNulos(char *linea)
 
     // Sobrescribir la línea original con la corregida
     strcpy(linea, resultado);
+}
+
+void contarFilasYColumnas(FILE *file, int *numFilas, int *numColumnas)
+{
+    char linea[MAX_LINE_LENGTH];
+    *numFilas = 0;      // Inicializar conteo de filas
+    *numColumnas = 0;   // Inicializar conteo de columnas
+
+    rewind(file);  // Regresar el puntero del archivo al inicio
+
+    // Leer la primera línea para contar las columnas
+    if (fgets(linea, sizeof(linea), file)) {
+        verificarNulos(linea);  // Verificar y corregir nulos en la primera línea
+
+        // Contar columnas en la primera línea
+        for (char *token = strtok(linea, ","); token != NULL; token = strtok(NULL, ",")) {
+            (*numColumnas)++;
+        }
+
+        (*numFilas)++;  // Contar la primera línea como una fila
+    }
+
+    // Leer el resto del archivo y contar filas
+    while (fgets(linea, sizeof(linea), file)) {
+        verificarNulos(linea);  // Verificar y corregir nulos en cada línea
+        (*numFilas)++;          // Contar cada línea leída
+    }
 }

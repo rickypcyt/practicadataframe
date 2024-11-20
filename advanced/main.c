@@ -1,6 +1,8 @@
 #include "lib.h"
 
 #define MAX_COMMAND_LENGTH 100
+#define MAX_LINE_LENGTH 1024
+
 
 void mostrarPrompt(Dataframe* dfActivo) {
     if (dfActivo == NULL) {
@@ -9,6 +11,8 @@ void mostrarPrompt(Dataframe* dfActivo) {
         printf("\033[1;37m[df%d: %d,%d]:> \033[0m", dfActivo->numColumnas, dfActivo->numFilas, dfActivo->numColumnas);
     }
 }
+
+
 
 int main() {
     Lista listaDataframes = {0, NULL};
