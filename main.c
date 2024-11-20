@@ -67,18 +67,27 @@ int main()
 
 void comandosCLI()
 {
-    char mode[30];
-    char nombreArchivo[MAX_LINE_LENGTH] = ""; // Inicializa el nombre del archivo
+    char input[MAX_LINE_LENGTH];  // Cadena para almacenar el comando y el nombre del archivo
+    char mode[30];                // Para almacenar el comando (load)
+    char nombreArchivo[MAX_LINE_LENGTH] = ""; // Para almacenar el nombre del archivo
+
     printf("\nRicardo Perez mail\n");
 
     while (1)
     {
         printf(WHT "\nIntroduce el comando deseado: " reset);
-        scanf(" %29s", mode);
+        fgets(input, sizeof(input), stdin); // Leer toda la entrada en una sola línea
 
-        if (strcmp(mode, "load") == 0)
+        // Usamos sscanf para extraer el comando y el nombre del archivo
+        int result = sscanf(input, "%29s %1023s", mode, nombreArchivo);
+
+        if (result == 2 && strcmp(mode, "load") == 0)
         {
-            solicitarNombreArchivo(nombreArchivo, sizeof(nombreArchivo));
+            // Asegurarse de que el nombre del archivo tenga la extensión ".csv"
+            if (strstr(nombreArchivo, ".csv") == NULL) {
+                strncat(nombreArchivo, ".csv", sizeof(nombreArchivo) - strlen(nombreArchivo) - 1);
+            }
+
             leerCSV(nombreArchivo);
         }
         else if (strcmp(mode, "quit") == 0)
@@ -97,6 +106,7 @@ void comandosCLI()
         }
     }
 }
+
 
 // Función para leer el archivo CSV
 void leerCSV(const char *nombreArchivo)
