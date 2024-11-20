@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <stdlib.h>
 
 // Colores para salida
 #define BLK "\e[0;30m"
@@ -22,9 +23,10 @@
 void comandosCLI();
 void leerCSV(const char *nombreArchivo);
 void solicitarNombreArchivo(char *nombreArchivo, size_t size);
-void verificarNulos(char *linea); // verificar y corregir valores nulos
-void contarFilasYColumnas(FILE *file, int *numFilas, int *numColumnas); // Declaración de la función
-// Tipo enumerado para representar los diferentes tipos de datos en las columnas
+void verificarNulos(char *linea);
+void contarFilasYColumnas(FILE *file, int *numFilas, int *numColumnas);
+
+// Definición de las estructuras (como antes)
 typedef enum
 {
     TEXTO,
@@ -32,73 +34,60 @@ typedef enum
     FECHA
 } TipoDato;
 
-// Estructura para representar una columna del dataframe
 typedef struct
 {
-    char nombre[30];       // Nombre de la columna
-    TipoDato tipo;         // Tipo de datos de la columna (TEXTO, NUMERICO, FECHA)
-    void *datos;           // Puntero genérico para almacenar los datos de la columna
-    unsigned char *esNulo; // Array paralelo, indica valores nulos (1/0: nulo/noNulo)
-    int numFilas;          // Número de filas en la columna
+    char nombre[30];
+    TipoDato tipo;
+    void *datos;
+    unsigned char *esNulo;
+    int numFilas;
 } Columna;
 
-// Alias para tipos FECHA: 'Fecha' alias de 'struct tm'
-typedef struct
-{
-    int year;
-    int month;
-    int day;
-} Fecha;
-
-// Estructura para representar un dataframe
 typedef struct
 {
     Columna *columnas;
-    int numColumnas; // número de columnas
+    int numColumnas;
     int numFilas;
-    int *indice; 
 } Dataframe;
+
+// Variables globales
+Dataframe *dfActivo = NULL; // Puntero al dataframe activo
+char prompt[MAX_LINE_LENGTH] = "[?]:> "; // Prompt inicial
 
 int main()
 {
-    comandosCLI(); // Llama a la función comandos
+    comandosCLI(); // Llama a la función comandosCLI
     return 0;
 }
 
 void comandosCLI()
 {
-    char input[MAX_LINE_LENGTH];  // Cadena para almacenar el comando y el nombre del archivo
-    char mode[30];                // Para almacenar el comando (load)
-    char nombreArchivo[MAX_LINE_LENGTH] = ""; // Para almacenar el nombre del archivo
+    char mode[30];
+    char nombreArchivo[MAX_LINE_LENGTH] = "";
 
     printf("\nRicardo Perez mail\n");
 
     while (1)
     {
-        printf(WHT "\nIntroduce el comando deseado: " reset);
-        fgets(input, sizeof(input), stdin); // Leer toda la entrada en una sola línea
+        // Mostrar el prompt actualizado
+        printf(WHT "%s" reset, prompt);
 
-        // Usamos sscanf para extraer el comando y el nombre del archivo
-        int result = sscanf(input, "%29s %1023s", mode, nombreArchivo);
+        scanf(" %29s", mode);
 
-        if (result == 2 && strcmp(mode, "load") == 0)
+        if (strcmp(mode, "load") == 0)
         {
-            // Asegurarse de que el nombre del archivo tenga la extensión ".csv"
-            if (strstr(nombreArchivo, ".csv") == NULL) {
-                strncat(nombreArchivo, ".csv", sizeof(nombreArchivo) - strlen(nombreArchivo) - 1);
-            }
-
+            solicitarNombreArchivo(nombreArchivo, sizeof(nombreArchivo));
             leerCSV(nombreArchivo);
         }
         else if (strcmp(mode, "quit") == 0)
         {
             printf(GRN "\nFin...\n" reset WHT);
-            break; // Salir del bucle
+            break;
         }
         else if (strcmp(mode, "") == 0)
         {
             printf(GRN "\nEXIT PROGRAM\n" reset WHT);
-            break; // Salir si se introduce una línea vacía
+            break;
         }
         else
         {
@@ -107,8 +96,7 @@ void comandosCLI()
     }
 }
 
-
-// Función para leer el archivo CSV
+// Función para leer el archivo CSV y crear un dataframe temporal
 void leerCSV(const char *nombreArchivo)
 {
     FILE *file = fopen(nombreArchivo, "r");
@@ -120,25 +108,57 @@ void leerCSV(const char *nombreArchivo)
     }
 
     char linea[MAX_LINE_LENGTH];
-    while (fgets(linea, sizeof(linea), file))
-    {
-        // Verificar y corregir valores nulos en la línea leída
-        verificarNulos(linea);
-
-        // Imprimir la línea corregida
-        printf("%s", linea);
-    }
-
     int numColumnas = 0;
     int numFilas = 0;
 
-    contarFilasYColumnas(file, &numFilas, &numColumnas); // Llamar a la función de conteo
+    contarFilasYColumnas(file, &numFilas, &numColumnas);
 
-    // Mostrar el número de filas y columnas
-    printf("\nEl archivo tiene %d filas y %d columnas.\n", numFilas, numColumnas);
+    // Crear el dataframe temporal df0
+    Dataframe *df0 = (Dataframe *)malloc(sizeof(Dataframe));
+    df0->numFilas = numFilas;
+    df0->numColumnas = numColumnas;
+    df0->columnas = (Columna *)malloc(numColumnas * sizeof(Columna));
 
+    // Leer la primera línea para obtener los nombres de las columnas
+    rewind(file);
+    fgets(linea, sizeof(linea), file);
+    verificarNulos(linea);
+
+    int colIndex = 0;
+    for (char *token = strtok(linea, ","); token != NULL; token = strtok(NULL, ","))
+    {
+        snprintf(df0->columnas[colIndex].nombre, sizeof(df0->columnas[colIndex].nombre), "%s", token);
+        df0->columnas[colIndex].tipo = TEXTO;
+        df0->columnas[colIndex].numFilas = numFilas;
+        df0->columnas[colIndex].datos = malloc(numFilas * sizeof(char *));
+        df0->columnas[colIndex].esNulo = malloc(numFilas * sizeof(unsigned char));
+        colIndex++;
+    }
+
+    // Leer el resto del archivo y llenar los datos en las columnas
+    int filaIndex = 0;
+    while (fgets(linea, sizeof(linea), file))
+    {
+        verificarNulos(linea);
+        colIndex = 0;
+        for (char *token = strtok(linea, ","); token != NULL; token = strtok(NULL, ","))
+        {
+            ((char **)df0->columnas[colIndex].datos)[filaIndex] = strdup(token);
+            df0->columnas[colIndex].esNulo[filaIndex] = (token[0] == '1') ? 1 : 0;
+            colIndex++;
+        }
+        filaIndex++;
+    }
 
     fclose(file);
+
+    // Asignar df0 como el dataframe activo
+    dfActivo = df0;
+
+    // Actualizar el prompt con el nombre del dataframe y sus dimensiones
+    snprintf(prompt, sizeof(prompt), "[df0: %d,%d]:> ", dfActivo->numFilas, dfActivo->numColumnas);
+
+    printf(GRN "\nDataframe df0 creado con éxito. El archivo tiene %d filas y %d columnas.\n" reset, df0->numFilas, df0->numColumnas);
 }
 
 // Función para solicitar el nombre del archivo CSV
@@ -146,66 +166,62 @@ void solicitarNombreArchivo(char *nombreArchivo, size_t size)
 {
     printf("Introduce el nombre del archivo CSV: ");
     scanf(" %1023s", nombreArchivo);
-    // Agregar la extensión .csv al nombre del archivo
     strncat(nombreArchivo, ".csv", size - strlen(nombreArchivo) - 1);
 }
 
-// verificar y corregir valores nulos en una línea
+// Función para verificar y corregir valores nulos en la línea
 void verificarNulos(char *linea)
 {
-    char resultado[MAX_LINE_LENGTH * 2]; // almacenar la línea corregida
+    char resultado[MAX_LINE_LENGTH * 2];
     int j = 0;
     int length = strlen(linea);
 
-    // valor nulo al inicio
     if (linea[0] == ',')
     {
-        resultado[j++] = '1'; // Reemplazar el valor nulo inicial con '1'
+        resultado[j++] = '1';
     }
 
-    for (int i = 0; i < length; i++) // recorre linea original
+    for (int i = 0; i < length; i++)
     {
-        // Detectar comas seguidas o coma al final de la línea
-        if (linea[i] == ',' && (linea[i + 1] == ',' || linea[i] == ',' && (linea[i + 1] == '\r' || linea[i] == ',' && (linea[i + 1] == '\0' ))))
+        if (linea[i] == ',' && (linea[i + 1] == ',' || linea[i + 1] == '\0'))
         {
-            resultado[j++] = ','; // Mantener la coma
-            resultado[j++] = '1'; // Reemplazar el valor nulo con '1'
+            resultado[j++] = ',';
+            resultado[j++] = '1';
         }
         else
         {
-            resultado[j++] = linea[i]; // j es el nuevo output
+            resultado[j++] = linea[i];
         }
     }
 
-    resultado[j] = '\0'; // Terminar la cadena resultante
-
-    // Sobrescribir la línea original con la corregida
+    resultado[j] = '\0';
     strcpy(linea, resultado);
 }
 
+// Función para contar las filas y columnas del archivo CSV
 void contarFilasYColumnas(FILE *file, int *numFilas, int *numColumnas)
 {
     char linea[MAX_LINE_LENGTH];
-    *numFilas = 0;      // Inicializar conteo de filas
-    *numColumnas = 0;   // Inicializar conteo de columnas
+    *numFilas = 0;
+    *numColumnas = 0;
 
-    rewind(file);  // Regresar el puntero del archivo al inicio
+    rewind(file);
 
-    // Leer la primera línea para contar las columnas
-    if (fgets(linea, sizeof(linea), file)) {
-        verificarNulos(linea);  // Verificar y corregir nulos en la primera línea
+    if (fgets(linea, sizeof(linea), file))
+    {
+        verificarNulos(linea);
 
-        // Contar columnas en la primera línea
-        for (char *token = strtok(linea, ","); token != NULL; token = strtok(NULL, ",")) {
+        for (char *token = strtok(linea, ","); token != NULL; token = strtok(NULL, ","))
+        {
             (*numColumnas)++;
         }
 
-        (*numFilas)++;  // Contar la primera línea como una fila
+        (*numFilas)++;
     }
 
-    // Leer el resto del archivo y contar filas
-    while (fgets(linea, sizeof(linea), file)) {
-        verificarNulos(linea);  // Verificar y corregir nulos en cada línea
-        (*numFilas)++;          // Contar cada línea leída
+    while (fgets(linea, sizeof(linea), file))
+    {
+        verificarNulos(linea);
+        (*numFilas)++;
     }
 }
