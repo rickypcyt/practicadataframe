@@ -1,227 +1,343 @@
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
 #include <stdlib.h>
+#include <ctype.h>
+#include <time.h>  // Added time module for date parsing
 
-// Colores para salida
-#define BLK "\e[0;30m"
-#define RED "\e[0;31m"
-#define GRN "\e[0;32m"
-#define YEL "\e[0;33m"
-#define BLU "\e[0;34m"
-#define MAG "\e[0;35m"
-#define CYN "\e[0;36m"
-#define WHT "\e[0;37m"
-
-// Reset de color
-#define reset "\e[0m"
-
-// Tamaño máximo para la línea del archivo
+// Constants and Configuration
 #define MAX_LINE_LENGTH 1024
+#define MAX_COLUMNS 100
+#define MAX_FILENAME 256
 
-// Declaraciones de funciones
-void comandosCLI();
-void leerCSV(const char *nombreArchivo);
-void solicitarNombreArchivo(char *nombreArchivo, size_t size);
-void verificarNulos(char *linea);
-void contarFilasYColumnas(FILE *file, int *numFilas, int *numColumnas);
+// Color Codes for Better Console Output
+#define ANSI_COLOR_RED     "\x1b[31m"
+#define ANSI_COLOR_GREEN   "\x1b[32m"
+#define ANSI_COLOR_WHITE   "\x1b[37m"
+#define ANSI_COLOR_RESET   "\x1b[0m"
 
-// Definición de las estructuras (como antes)
-typedef enum
-{
-    TEXTO,
-    NUMERICO,
-    FECHA
-} TipoDato;
+// Enum for Data Types
+typedef enum {
+    TYPE_TEXT,
+    TYPE_NUMERIC,
+    TYPE_DATE
+} DataType;
 
-typedef struct
-{
-    char nombre[30];
-    TipoDato tipo;
-    void *datos;
-    unsigned char *esNulo;
-    int numFilas;
-} Columna;
+// Improved Column Structure
+typedef struct {
+    char name[50];
+    DataType type;
+    void **data;
+    int *is_null;
+    int row_count;
+} Column;
 
-typedef struct
-{
-    Columna *columnas;
-    int numColumnas;
-    int numFilas;
-} Dataframe;
+// Improved Dataframe Structure
+typedef struct {
+    Column *columns;
+    int column_count;
+    int row_count;
+    char name[20];
+} DataFrame;
 
-// Variables globales
-Dataframe *dfActivo = NULL; // Puntero al dataframe activo
-char prompt[MAX_LINE_LENGTH] = "[?]:> "; // Prompt inicial
+// Global Variables
+DataFrame *active_dataframe = NULL;
+char current_prompt[MAX_LINE_LENGTH] = "[?]:> ";
 
-int main()
-{
-    comandosCLI(); // Llama a la función comandosCLI
+// Function Prototypes
+void initialize_dataframe(DataFrame *df, int columns, int rows, const char *name);
+void free_dataframe(DataFrame *df);
+int count_csv_columns(const char *line);
+void trim_whitespace(char *str);
+void load_csv(const char *filename);
+void show_dataframe();
+void print_error(const char *message);
+void interactive_cli();
+void detect_column_types(DataFrame *df);
+
+// Main Function
+int main() {
+    printf(ANSI_COLOR_GREEN "Dataframe Management System\n" ANSI_COLOR_RESET);
+    interactive_cli();
     return 0;
 }
 
-void comandosCLI()
-{
-    char mode[30];
-    char nombreArchivo[MAX_LINE_LENGTH] = "";
+// Enhanced Error Printing Function
+void print_error(const char *message) {
+    fprintf(stderr, ANSI_COLOR_RED "ERROR: %s\n" ANSI_COLOR_RESET, message);
+}
 
-    printf("\nRicardo Perez mail\n");
+// Initialize Dataframe with Memory Allocation
+void initialize_dataframe(DataFrame *df, int columns, int rows, const char *name) {
+    df->columns = malloc(columns * sizeof(Column));
+    if (!df->columns) {
+        print_error("Memory allocation failed for columns");
+        return;
+    }
+    df->column_count = columns;
+    df->row_count = rows;
+    strncpy(df->name, name, sizeof(df->name) - 1);
 
-    while (1)
-    {
-        // Mostrar el prompt actualizado
-        printf(WHT "%s" reset, prompt);
-
-        scanf(" %29s", mode);
-
-        if (strcmp(mode, "load") == 0)
-        {
-            solicitarNombreArchivo(nombreArchivo, sizeof(nombreArchivo));
-            leerCSV(nombreArchivo);
-        }
-        else if (strcmp(mode, "quit") == 0)
-        {
-            printf(GRN "\nFin...\n" reset WHT);
-            break;
-        }
-        else if (strcmp(mode, "") == 0)
-        {
-            printf(GRN "\nEXIT PROGRAM\n" reset WHT);
-            break;
-        }
-        else
-        {
-            printf(RED "ERROR: Comando no reconocido. Intenta de nuevo.\n" reset WHT);
-        }
+    for (int i = 0; i < columns; i++) {
+        df->columns[i].data = malloc(rows * sizeof(void*));
+        df->columns[i].is_null = malloc(rows * sizeof(int));
+        df->columns[i].row_count = rows;
+        memset(df->columns[i].is_null, 0, rows * sizeof(int));
     }
 }
 
-// Función para leer el archivo CSV y crear un dataframe temporal
-void leerCSV(const char *nombreArchivo)
-{
-    FILE *file = fopen(nombreArchivo, "r");
+// Free Dataframe Memory
+void free_dataframe(DataFrame *df) {
+    if (df) {
+        for (int i = 0; i < df->column_count; i++) {
+            for (int j = 0; j < df->row_count; j++) {
+                free(df->columns[i].data[j]);
+            }
+            free(df->columns[i].data);
+            free(df->columns[i].is_null);
+        }
+        free(df->columns);
+        free(df);
+    }
+}
 
-    if (file == NULL)
-    {
-        perror(RED "Error al abrir el archivo" reset WHT);
+// Trim Whitespace from String
+void trim_whitespace(char *str) {
+    char *start = str;
+    char *end = str + strlen(str) - 1;
+
+    while (isspace(*start)) start++;
+    while (end > start && isspace(*end)) end--;
+
+    *(end + 1) = '\0';
+    memmove(str, start, end - start + 2);
+}
+
+// Count Columns in CSV Line
+int count_csv_columns(const char *line) {
+    int count = 1;
+    for (int i = 0; line[i]; i++) {
+        if (line[i] == ',') count++;
+    }
+    return count;
+}
+
+// Handle null values in CSV
+void handle_null_values(char *linea) {
+    char resultado[MAX_LINE_LENGTH * 2] = {0};
+    int j = 0;
+    int length = strlen(linea);
+    int expecting_value = 1;  // Start expecting a value
+
+    for (int i = 0; i <= length; i++) {
+        // If we encounter a comma, carriage return, or newline, process the field
+        if (i == length || linea[i] == ',' || linea[i] == '\r') {
+            if (expecting_value) {
+                // Insert 'NULL' for empty fields
+                resultado[j++] = 'N';
+                resultado[j++] = 'U';
+                resultado[j++] = 'L';
+                resultado[j++] = 'L';
+            }
+            
+            // If it's not the last character, copy the comma, carriage return, or newline
+            if (i < length) {
+                resultado[j++] = linea[i];  // Add comma, carriage return, or newline
+            }
+
+            // After a comma, carriage return, or newline, we expect a value for the next field
+            expecting_value = 1;
+
+            // If we encounter \n or \r, treat them as the end of a line
+            if (linea[i] == '\n' || linea[i] == '\r') {
+                // We might want to handle line breaks properly for Windows-based CSVs
+                resultado[j++] = '\r';  // Carriage return (if needed)
+                resultado[j++] = '\n';  // Newline
+            }
+        } else {
+            resultado[j++] = linea[i];
+            expecting_value = 0;  // We found a non-empty value, so no longer expecting 'NULL'
+        }
+    }
+
+    resultado[j] = '\0';  // Terminate the resulting string
+    strcpy(linea, resultado); // Overwrite original line
+}
+
+
+
+
+// Load CSV and parse data into DataFrame
+void load_csv(const char *filename) {
+    FILE *file = fopen(filename, "r");
+    if (!file) {
+        print_error("Cannot open file");
         return;
     }
 
-    char linea[MAX_LINE_LENGTH];
-    int numColumnas = 0;
-    int numFilas = 0;
+    char line[MAX_LINE_LENGTH];
+    int row_count = 0, column_count = 0;
 
-    contarFilasYColumnas(file, &numFilas, &numColumnas);
-
-    // Crear el dataframe temporal df0
-    Dataframe *df0 = (Dataframe *)malloc(sizeof(Dataframe));
-    df0->numFilas = numFilas;
-    df0->numColumnas = numColumnas;
-    df0->columnas = (Columna *)malloc(numColumnas * sizeof(Columna));
-
-    // Leer la primera línea para obtener los nombres de las columnas
-    rewind(file);
-    fgets(linea, sizeof(linea), file);
-    verificarNulos(linea);
-
-    int colIndex = 0;
-    for (char *token = strtok(linea, ","); token != NULL; token = strtok(NULL, ","))
-    {
-        snprintf(df0->columnas[colIndex].nombre, sizeof(df0->columnas[colIndex].nombre), "%s", token);
-        df0->columnas[colIndex].tipo = TEXTO;
-        df0->columnas[colIndex].numFilas = numFilas;
-        df0->columnas[colIndex].datos = malloc(numFilas * sizeof(char *));
-        df0->columnas[colIndex].esNulo = malloc(numFilas * sizeof(unsigned char));
-        colIndex++;
-    }
-
-    // Leer el resto del archivo y llenar los datos en las columnas
-    int filaIndex = 0;
-    while (fgets(linea, sizeof(linea), file))
-    {
-        verificarNulos(linea);
-        colIndex = 0;
-        for (char *token = strtok(linea, ","); token != NULL; token = strtok(NULL, ","))
-        {
-            ((char **)df0->columnas[colIndex].datos)[filaIndex] = strdup(token);
-            df0->columnas[colIndex].esNulo[filaIndex] = (token[0] == '1') ? 1 : 0;
-            colIndex++;
+    // First pass: Count rows and columns
+    while (fgets(line, sizeof(line), file)) {
+        handle_null_values(line);  // Process null values
+        row_count++;
+        if (row_count == 1) {
+            column_count = count_csv_columns(line);
         }
-        filaIndex++;
     }
+    rewind(file);
+
+    // Free existing dataframe if present
+    if (active_dataframe) {
+        free_dataframe(active_dataframe);
+    }
+
+    // Allocate new dataframe
+    active_dataframe = malloc(sizeof(DataFrame));
+    if (!active_dataframe) {
+        print_error("Memory allocation failed for DataFrame");
+        fclose(file);
+        return;
+    }
+    initialize_dataframe(active_dataframe, column_count, row_count, "df0");
+
+    // Read headers
+    fgets(line, sizeof(line), file);
+    char *token = strtok(line, ",");
+    for (int col = 0; token != NULL; col++) {
+        trim_whitespace(token);
+        strncpy(active_dataframe->columns[col].name, token, sizeof(active_dataframe->columns[col].name) - 1);
+        token = strtok(NULL, ",");
+    }
+
+    // Read data rows
+    int current_row = 0;
+while (fgets(line, sizeof(line), file) && current_row < row_count - 1) {
+    handle_null_values(line);  // Process null values
+    token = strtok(line, ",");
+    for (int col = 0; token != NULL; col++) {
+        trim_whitespace(token);
+
+        // Special handling for null values
+        if (strcmp(token, "NULL") == 0) {
+            active_dataframe->columns[col].data[current_row] = NULL;
+            active_dataframe->columns[col].is_null[current_row] = 1;
+        } else {
+            active_dataframe->columns[col].data[current_row] = strdup(token);
+            active_dataframe->columns[col].is_null[current_row] = 0;
+        }
+        token = strtok(NULL, ",");
+    }
+    current_row++;
+}
+
+
+
+    // Detect column types
+    detect_column_types(active_dataframe);
+
+    // Update prompt
+    snprintf(current_prompt, sizeof(current_prompt), "[%s: %d,%d]:> ", active_dataframe->name, active_dataframe->row_count, active_dataframe->column_count);
+
+    printf(ANSI_COLOR_GREEN "Successfully loaded %s with %d rows and %d columns\n" ANSI_COLOR_RESET, filename, active_dataframe->row_count, active_dataframe->column_count);
 
     fclose(file);
-
-    // Asignar df0 como el dataframe activo
-    dfActivo = df0;
-
-    // Actualizar el prompt con el nombre del dataframe y sus dimensiones
-    snprintf(prompt, sizeof(prompt), "[df0: %d,%d]:> ", dfActivo->numFilas, dfActivo->numColumnas);
-
-    printf(GRN "\nDataframe df0 creado con éxito. El archivo tiene %d filas y %d columnas.\n" reset, df0->numFilas, df0->numColumnas);
 }
 
-// Función para solicitar el nombre del archivo CSV
-void solicitarNombreArchivo(char *nombreArchivo, size_t size)
-{
-    printf("Introduce el nombre del archivo CSV: ");
-    scanf(" %1023s", nombreArchivo);
-    strncat(nombreArchivo, ".csv", size - strlen(nombreArchivo) - 1);
+// Validate date format YYYY-MM-DD
+int is_valid_date(const char *date_str) {
+    struct tm tm;
+    memset(&tm, 0, sizeof(struct tm));
+
+    // Use sscanf as an alternative to strptime for Windows compatibility
+    if (sscanf(date_str, "%4d-%2d-%2d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday) != 3) {
+        return 0;
+    }
+
+    tm.tm_year -= 1900;  // Year since 1900
+    tm.tm_mon -= 1;      // Month (0-11)
+    time_t t = mktime(&tm);
+    return t != -1;
 }
 
-// Función para verificar y corregir valores nulos en la línea
-void verificarNulos(char *linea)
-{
-    char resultado[MAX_LINE_LENGTH * 2];
-    int j = 0;
-    int length = strlen(linea);
 
-    if (linea[0] == ',')
-    {
-        resultado[j++] = '1';
-    }
+// Detect column types: Date > Numeric > Text
+void detect_column_types(DataFrame *df) {
+    for (int col = 0; col < df->column_count; col++) {
+        df->columns[col].type = TYPE_TEXT;  // Default to text
+        int is_numeric = 1;
+        int is_date = 1;
 
-    for (int i = 0; i < length; i++)
-    {
-        if (linea[i] == ',' && (linea[i + 1] == ',' || linea[i + 1] == '\0'))
-        {
-            resultado[j++] = ',';
-            resultado[j++] = '1';
+        for (int row = 0; row < df->row_count; row++) {
+            char *value = (char*)df->columns[col].data[row];
+            if (value == NULL) continue;
+
+            // Check if numeric
+            char *endptr;
+            strtod(value, &endptr);
+            if (endptr == value) {
+                is_numeric = 0;
+            }
+
+            // Check if date
+            if (!is_valid_date(value)) {
+                is_date = 0;
+            }
         }
-        else
-        {
-            resultado[j++] = linea[i];
+
+        // Determine column type priority: Date > Numeric > Text
+        if (is_date) {
+            df->columns[col].type = TYPE_DATE;
+        } else if (is_numeric) {
+            df->columns[col].type = TYPE_NUMERIC;
         }
     }
-
-    resultado[j] = '\0';
-    strcpy(linea, resultado);
 }
 
-// Función para contar las filas y columnas del archivo CSV
-void contarFilasYColumnas(FILE *file, int *numFilas, int *numColumnas)
-{
-    char linea[MAX_LINE_LENGTH];
-    *numFilas = 0;
-    *numColumnas = 0;
-
-    rewind(file);
-
-    if (fgets(linea, sizeof(linea), file))
-    {
-        verificarNulos(linea);
-
-        for (char *token = strtok(linea, ","); token != NULL; token = strtok(NULL, ","))
-        {
-            (*numColumnas)++;
-        }
-
-        (*numFilas)++;
+// Show DataFrame in a tabular format
+void show_dataframe() {
+    if (!active_dataframe) {
+        print_error("No dataframe loaded.");
+        return;
     }
 
-    while (fgets(linea, sizeof(linea), file))
-    {
-        verificarNulos(linea);
-        (*numFilas)++;
+    printf(ANSI_COLOR_WHITE "Dataframe: %s\n" ANSI_COLOR_RESET, active_dataframe->name);
+    for (int col = 0; col < active_dataframe->column_count; col++) {
+        printf("%-20s", active_dataframe->columns[col].name);
+    }
+    printf("\n");
+
+    for (int row = 0; row < active_dataframe->row_count; row++) {
+        for (int col = 0; col < active_dataframe->column_count; col++) {
+            char *value = (char*)active_dataframe->columns[col].data[row];
+            if (value == NULL) {
+                printf("NULL                 ");  // Adjust spacing if needed
+            } else {
+                printf("%-20s", value);
+            }
+        }
+        printf("\n");
+    }
+}
+
+
+
+// Interactive CLI for User Interaction
+void interactive_cli() {
+    char input[MAX_LINE_LENGTH];
+    while (1) {
+        printf("%s", current_prompt);
+        fgets(input, sizeof(input), stdin);
+        trim_whitespace(input);
+
+        if (strcmp(input, "quit") == 0) {
+            break;
+        } else if (strncmp(input, "load ", 5) == 0) {
+            load_csv(input + 5);
+        } else if (strcmp(input, "show") == 0) {
+            show_dataframe();
+        } else {
+            printf("Unknown command: %s\n", input);
+        }
     }
 }
