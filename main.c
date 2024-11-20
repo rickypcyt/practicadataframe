@@ -320,9 +320,159 @@ void show_dataframe() {
     }
 }
 
+void show_metadata() {
+    if (!active_dataframe) {
+        print_error("No dataframe loaded.");
+        return;
+    }
+
+    for (int col = 0; col < active_dataframe->column_count; col++) {
+        // Count null values for this column
+        int null_count = 0;
+        for (int row = 0; row < active_dataframe->row_count; row++) {
+            if (active_dataframe->columns[col].is_null[row]) {
+                null_count++;
+            }
+        }
+
+        // Determine type string
+        char *type_str;
+        switch(active_dataframe->columns[col].type) {
+            case TYPE_TEXT: type_str = "Text"; break;
+            case TYPE_NUMERIC: type_str = "Numeric"; break;
+            case TYPE_DATE: type_str = "Date"; break;
+            default: type_str = "Unknown"; break;
+        }
+
+        // Print column metadata in green
+        printf(ANSI_COLOR_GREEN "%s: %s (Null values: %d)\n" ANSI_COLOR_RESET, 
+               active_dataframe->columns[col].name, 
+               type_str, 
+               null_count);
+    }
+}
 
 
-// Interactive CLI for User Interaction
+void view_dataframe(int n) {
+    if (!active_dataframe) {
+        print_error("No dataframe loaded.");
+        return;
+    }
+
+    // Show the headers first
+    for (int j = 0; j < active_dataframe->column_count; j++) {
+        printf("%s\t", active_dataframe->columns[j].name); // Print the column name (header)
+    }
+    printf("\n");
+
+    int rows_to_show = n < active_dataframe->row_count ? n : active_dataframe->row_count;
+
+    // Display the rows of data
+    for (int i = 0; i < rows_to_show; i++) {
+        for (int j = 0; j < active_dataframe->column_count; j++) {
+            if (active_dataframe->columns[j].is_null[i]) {
+                printf("NULL\t");
+            } else {
+                // Display the column's data (casting as string for simplicity)
+                printf("%s\t", (char *)active_dataframe->columns[j].data[i]);
+            }
+        }
+        printf("\n");
+    }
+}
+
+
+
+
+// Modify interactive_cli() to handle view command
+// Helper function to compare values based on column type
+// Helper function to compare values based on column type
+int compare_values(void *a, void *b, DataType type, int is_descending) {
+    if (a == NULL && b == NULL) return 0;
+    if (a == NULL) return is_descending ? 1 : -1;
+    if (b == NULL) return is_descending ? -1 : 1;
+
+    char *str_a = (char*)a;
+    char *str_b = (char*)b;
+
+    switch(type) {
+        case TYPE_NUMERIC: {
+            double num_a = atof(str_a);
+            double num_b = atof(str_b);
+            return is_descending ? 
+                (num_a < num_b ? 1 : (num_a > num_b ? -1 : 0)) : 
+                (num_a < num_b ? -1 : (num_a > num_b ? 1 : 0));
+        }
+        case TYPE_DATE: {
+            struct tm tm_a = {0}, tm_b = {0};
+            sscanf(str_a, "%4d-%2d-%2d", &tm_a.tm_year, &tm_a.tm_mon, &tm_a.tm_mday);
+            sscanf(str_b, "%4d-%2d-%2d", &tm_b.tm_year, &tm_b.tm_mon, &tm_b.tm_mday);
+            time_t time_a = mktime(&tm_a);
+            time_t time_b = mktime(&tm_b);
+            return is_descending ? 
+                (time_a < time_b ? 1 : (time_a > time_b ? -1 : 0)) :
+                (time_a < time_b ? -1 : (time_a > time_b ? 1 : 0));
+        }
+        case TYPE_TEXT: {
+            return is_descending ? strcmp(str_b, str_a) : strcmp(str_a, str_b);
+        }
+        default:
+            return 0;
+    }
+}
+
+void sort_dataframe(const char *column_name, int is_descending) {
+    if (!active_dataframe) {
+        print_error("No dataframe loaded.");
+        return;
+    }
+
+    // Buscar el índice de la columna
+    int column_index = -1;
+    for (int i = 0; i < active_dataframe->column_count; i++) {
+        if (strcmp(active_dataframe->columns[i].name, column_name) == 0) {
+            column_index = i;
+            break;
+        }
+    }
+
+    if (column_index == -1) {
+        print_error("Column not found.");
+        return;
+    }
+
+    // Obtener el tipo de datos de la columna
+    DataType column_type = active_dataframe->columns[column_index].type;
+
+    // Ordenamiento de burbuja para ordenar las filas de acuerdo a la columna
+    for (int i = 0; i < active_dataframe->row_count - 1; i++) {
+        for (int j = 0; j < active_dataframe->row_count - i - 1; j++) {
+            void *val1 = active_dataframe->columns[column_index].data[j];
+            void *val2 = active_dataframe->columns[column_index].data[j+1];
+
+            if (compare_values(val1, val2, column_type, is_descending) > 0) {
+                // Intercambiar todas las columnas
+                for (int col = 0; col < active_dataframe->column_count; col++) {
+                    void *temp_data = active_dataframe->columns[col].data[j];
+                    active_dataframe->columns[col].data[j] = active_dataframe->columns[col].data[j+1];
+                    active_dataframe->columns[col].data[j+1] = temp_data;
+
+                    // Intercambiar los valores nulos
+                    int temp_null = active_dataframe->columns[col].is_null[j];
+                    active_dataframe->columns[col].is_null[j] = active_dataframe->columns[col].is_null[j+1];
+                    active_dataframe->columns[col].is_null[j+1] = temp_null;
+                }
+            }
+        }
+    }
+
+    printf(ANSI_COLOR_GREEN "Dataframe sorted by column '%s' in %s order.\n" ANSI_COLOR_RESET, 
+           column_name, is_descending ? "descending" : "ascending");
+}
+
+
+
+// Modify interactive_cli() to handle sort command
 void interactive_cli() {
     char input[MAX_LINE_LENGTH];
     while (1) {
@@ -336,8 +486,52 @@ void interactive_cli() {
             load_csv(input + 5);
         } else if (strcmp(input, "show") == 0) {
             show_dataframe();
+        } else if (strcmp(input, "meta") == 0) {
+            show_metadata();
+        } else if (strncmp(input, "view", 4) == 0) {
+            int n = 10; // default to 10 rows
+            
+            if (strlen(input) > 4) {
+                char *endptr;
+                long parsed_n = strtol(input + 4, &endptr, 10);
+                
+                if (endptr != input + 4 && parsed_n > 0) {
+                    n = (int)parsed_n;
+                } else {
+                    print_error("Invalid number of rows specified");
+                    continue;
+                }
+            }
+            
+            view_dataframe(n);
+        } else if (strncmp(input, "sort ", 5) == 0) {
+            char column_name[50];
+            char order[10] = "asc";  // default ascending
+            int is_descending = 0;
+
+            // Parse command
+            int parsed = sscanf(input + 5, "%49s %9s", column_name, order);
+            
+            if (parsed == 0) {
+                print_error("Invalid sort command");
+                continue;
+            }
+
+            // Check order
+            if (parsed == 2) {
+                if (strcmp(order, "asc") == 0) {
+                    is_descending = 0;
+                } else if (strcmp(order, "des") == 0) {
+                    is_descending = 1;
+                } else {
+                    print_error("Invalid sort order. Use 'asc' or 'des'.");
+                    continue;
+                }
+            }
+
+            sort_dataframe(column_name, is_descending);
         } else {
             printf("Unknown command: %s\n", input);
         }
     }
-}
+} 
