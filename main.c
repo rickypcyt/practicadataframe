@@ -56,8 +56,8 @@ typedef struct {
 } Lista;
 
 // Variables globales para gestión del sistema
-DataFrame *active_dataframe = NULL;  // DataFrame activo actualmente
-char current_prompt[MAX_LINE_LENGTH] = "[?]:> ";  // Prompt de la interfaz interactiva
+DataFrame *dataframe_activo = NULL;  // DataFrame activo actualmente
+char promptTerminal[MAX_LINE_LENGTH] = "[?]:> ";  // Prompt de la interfaz interactiva
 
 // Prototipos de todas las funciones utilizadas
 void crearDataframe(DataFrame *df, int columnas, int rows, const char *nombre);
@@ -173,10 +173,7 @@ void verificarNulos(char *linea) {
         if (i == length || linea[i] == ',' || linea[i] == '\r') {
             if (expecting_value) {
                 // Insertar 'NULL' para campos vacíos
-                resultado[j++] = 'N';
-                resultado[j++] = 'U';
-                resultado[j++] = 'L';
-                resultado[j++] = 'L';
+                resultado[j++] = '1';
             }
             
             // Copiar separadores si no es el último carácter
@@ -273,31 +270,31 @@ void cargarCSV(const char *filename) {
     rewind(file);
 
     // Liberar DataFrame existente
-    if (active_dataframe) {
-        liberarMemoriaDF(active_dataframe);
+    if (dataframe_activo) {
+        liberarMemoriaDF(dataframe_activo);
     }
 
     // Crear nuevo DataFrame
-    active_dataframe = malloc(sizeof(DataFrame));
-    if (!active_dataframe) {
+    dataframe_activo = malloc(sizeof(DataFrame));
+    if (!dataframe_activo) {
         print_error("Fallo en asignación de memoria para DataFrame");
         fclose(file);
         return;
     }
-    crearDataframe(active_dataframe, numColumnas, numFilas, "df0");
+    crearDataframe(dataframe_activo, numColumnas, numFilas, "df0");
 
     // Leer encabezados
     fgets(line, sizeof(line), file);
     char *token = strtok(line, ",");
     for (int col = 0; token != NULL; col++) {
         cortarEspacios(token);
-        strncpy(active_dataframe->columnas[col].nombre, token, sizeof(active_dataframe->columnas[col].nombre) - 1);
+        strncpy(dataframe_activo->columnas[col].nombre, token, sizeof(dataframe_activo->columnas[col].nombre) - 1);
         token = strtok(NULL, ",");
     }
 
     // Leer filas de datos
-    int current_row = 0;
-    while (fgets(line, sizeof(line), file) && current_row < numFilas - 1) {
+    int fila_actual = 0;
+    while (fgets(line, sizeof(line), file) && fila_actual < numFilas - 1) {
         verificarNulos(line);
         token = strtok(line, ",");
         for (int col = 0; token != NULL; col++) {
@@ -305,26 +302,26 @@ void cargarCSV(const char *filename) {
 
             // Manejo especial de valores nulos
             if (strcmp(token, "NULL") == 0) {
-                active_dataframe->columnas[col].datos[current_row] = NULL;
-                active_dataframe->columnas[col].esNulo[current_row] = 1;
+                dataframe_activo->columnas[col].datos[fila_actual] = NULL;
+                dataframe_activo->columnas[col].esNulo[fila_actual] = 1;
             } else {
-                active_dataframe->columnas[col].datos[current_row] = strdup(token);
-                active_dataframe->columnas[col].esNulo[current_row] = 0;
+                dataframe_activo->columnas[col].datos[fila_actual] = strdup(token);
+                dataframe_activo->columnas[col].esNulo[fila_actual] = 0;
             }
             token = strtok(NULL, ",");
         }
-        current_row++;
+        fila_actual++;
     }
 
     // Detectar tipos de columnas
-    tiposColumnas(active_dataframe);
+    tiposColumnas(dataframe_activo);
 
     // Actualizar prompt
-    snprintf(current_prompt, sizeof(current_prompt), "[%s: %d,%d]:> ", 
-             active_dataframe->indice, active_dataframe->numFilas, active_dataframe->numColumnas);
+    snprintf(promptTerminal, sizeof(promptTerminal), "[%s: %d,%d]:> ", 
+             dataframe_activo->indice, dataframe_activo->numFilas, dataframe_activo->numColumnas);
 
     printf(GREEN "Cargado exitosamente %s con %d filas y %d columnas\n" RESET, 
-           filename, active_dataframe->numFilas, active_dataframe->numColumnas);
+           filename, dataframe_activo->numFilas, dataframe_activo->numColumnas);
 
     showCLI();
 
@@ -333,23 +330,23 @@ void cargarCSV(const char *filename) {
 
 // Mostrar DataFrame completo
 void showCLI() {
-    if (!active_dataframe) {
+    if (!dataframe_activo) {
         print_error("No hay DataFrame cargado.");
         return;
     }
 
-    printf(WHITE"DataFrame: %s\n" RESET, active_dataframe->indice);
+    printf(WHITE"DataFrame: %s\n" RESET, dataframe_activo->indice);
     
     // Imprimir encabezados
-    for (int col = 0; col < active_dataframe->numColumnas; col++) {
-        printf("%-20s", active_dataframe->columnas[col].nombre);
+    for (int col = 0; col < dataframe_activo->numColumnas; col++) {
+        printf("%-20s", dataframe_activo->columnas[col].nombre);
     }
     printf("\n");
 
     // Imprimir datos
-    for (int row = 0; row < active_dataframe->numFilas; row++) {
-        for (int col = 0; col < active_dataframe->numColumnas; col++) {
-            char *value = (char*)active_dataframe->columnas[col].datos[row];
+    for (int row = 0; row < dataframe_activo->numFilas; row++) {
+        for (int col = 0; col < dataframe_activo->numColumnas; col++) {
+            char *value = (char*)dataframe_activo->columnas[col].datos[row];
             if (value == NULL) {
                 printf("NULL                 ");
             } else {
@@ -362,23 +359,23 @@ void showCLI() {
 
 // Mostrar metadatos del DataFrame
 void metaCLI() {
-    if (!active_dataframe) {
+    if (!dataframe_activo) {
         print_error("No hay DataFrame cargado.");
         return;
     }
 
     // Recorrer columnas e imprimir metadatos
-    for (int col = 0; col < active_dataframe->numColumnas; col++) {
+    for (int col = 0; col < dataframe_activo->numColumnas; col++) {
         int null_count = 0;
-        for (int row = 0; row < active_dataframe->numFilas; row++) {
-            if (active_dataframe->columnas[col].esNulo[row]) {
+        for (int row = 0; row < dataframe_activo->numFilas; row++) {
+            if (dataframe_activo->columnas[col].esNulo[row]) {
                 null_count++;
             }
         }
 
         // Determinar tipo de columna
         char *type_str;
-        switch(active_dataframe->columnas[col].tipo) {
+        switch(dataframe_activo->columnas[col].tipo) {
             case TEXTO: type_str = "Texto"; break;
             case NUMERICO: type_str = "Numérico"; break;
             case FECHA: type_str = "Fecha"; break;
@@ -387,7 +384,7 @@ void metaCLI() {
 
         // Imprimir metadatos de columna
         printf(GREEN "%s: %s (Valores nulos: %d)\n" RESET, 
-               active_dataframe->columnas[col].nombre, 
+               dataframe_activo->columnas[col].nombre, 
                type_str, 
                null_count);
     }
@@ -395,27 +392,27 @@ void metaCLI() {
 
 // Función para ver primeras N filas del DataFrame
 void viewCLI(int n) {
-    if (!active_dataframe) {
+    if (!dataframe_activo) {
         print_error("No hay DataFrame cargado.");
         return;
     }
 
     // Mostrar encabezados
-    for (int j = 0; j < active_dataframe->numColumnas; j++) {
-        printf("%s\t", active_dataframe->columnas[j].nombre);
+    for (int j = 0; j < dataframe_activo->numColumnas; j++) {
+        printf("%s\t", dataframe_activo->columnas[j].nombre);
     }
     printf("\n");
 
     // Determinar número de filas a mostrar
-    int rows_to_show = n < active_dataframe->numFilas ? n : active_dataframe->numFilas;
+    int rows_to_show = n < dataframe_activo->numFilas ? n : dataframe_activo->numFilas;
 
     // Mostrar filas de datos
     for (int i = 0; i < rows_to_show; i++) {
-        for (int j = 0; j < active_dataframe->numColumnas; j++) {
-            if (active_dataframe->columnas[j].esNulo[i]) {
+        for (int j = 0; j < dataframe_activo->numColumnas; j++) {
+            if (dataframe_activo->columnas[j].esNulo[i]) {
                 printf("NULL\t");
             } else {
-                printf("%s\t", (char *)active_dataframe->columnas[j].datos[i]);
+                printf("%s\t", (char *)dataframe_activo->columnas[j].datos[i]);
             }
         }
         printf("\n");
@@ -469,15 +466,15 @@ int compararValores(void *a, void *b, TipoDato tipo, int is_descending) {
 
 // Función para ordenar DataFrame
 void sortCLI(const char *column_name, int is_descending) {
-    if (!active_dataframe) {
+    if (!dataframe_activo) {
         print_error("No hay DataFrame cargado.");
         return;
     }
 
     // Buscar índice de la columna
     int column_index = -1;
-    for (int i = 0; i < active_dataframe->numColumnas; i++) {
-        if (strcmp(active_dataframe->columnas[i].nombre, column_name) == 0) {
+    for (int i = 0; i < dataframe_activo->numColumnas; i++) {
+        if (strcmp(dataframe_activo->columnas[i].nombre, column_name) == 0) {
             column_index = i;
             break;
         }
@@ -489,25 +486,25 @@ void sortCLI(const char *column_name, int is_descending) {
     }
 
     // Obtener tipo de datos de la columna
-    TipoDato column_type = active_dataframe->columnas[column_index].tipo;
+    TipoDato column_type = dataframe_activo->columnas[column_index].tipo;
 
     // Algoritmo de ordenamiento de burbuja
-    for (int i = 0; i < active_dataframe->numFilas - 1; i++) {
-        for (int j = 0; j < active_dataframe->numFilas - i - 1; j++) {
-            void *val1 = active_dataframe->columnas[column_index].datos[j];
-            void *val2 = active_dataframe->columnas[column_index].datos[j+1];
+    for (int i = 0; i < dataframe_activo->numFilas - 1; i++) {
+        for (int j = 0; j < dataframe_activo->numFilas - i - 1; j++) {
+            void *val1 = dataframe_activo->columnas[column_index].datos[j];
+            void *val2 = dataframe_activo->columnas[column_index].datos[j+1];
 
             if (compararValores(val1, val2, column_type, is_descending) > 0) {
                 // Intercambiar datos de todas las columnas
-                for (int col = 0; col < active_dataframe->numColumnas; col++) {
-                    void *temp_data = active_dataframe->columnas[col].datos[j];
-                    active_dataframe->columnas[col].datos[j] = active_dataframe->columnas[col].datos[j+1];
-                    active_dataframe->columnas[col].datos[j+1] = temp_data;
+                for (int col = 0; col < dataframe_activo->numColumnas; col++) {
+                    void *temp_data = dataframe_activo->columnas[col].datos[j];
+                    dataframe_activo->columnas[col].datos[j] = dataframe_activo->columnas[col].datos[j+1];
+                    dataframe_activo->columnas[col].datos[j+1] = temp_data;
 
                     // Intercambiar valores de nulidad
-                    int temp_null = active_dataframe->columnas[col].esNulo[j];
-                    active_dataframe->columnas[col].esNulo[j] = active_dataframe->columnas[col].esNulo[j+1];
-                    active_dataframe->columnas[col].esNulo[j+1] = temp_null;
+                    int temp_null = dataframe_activo->columnas[col].esNulo[j];
+                    dataframe_activo->columnas[col].esNulo[j] = dataframe_activo->columnas[col].esNulo[j+1];
+                    dataframe_activo->columnas[col].esNulo[j+1] = temp_null;
                 }
             }
         }
@@ -521,7 +518,7 @@ void sortCLI(const char *column_name, int is_descending) {
 void CLI() {
     char input[MAX_LINE_LENGTH];
     while (1) {
-        printf("%s", current_prompt);
+        printf("%s", promptTerminal);
         fgets(input, sizeof(input), stdin);
         cortarEspacios(input);
 
