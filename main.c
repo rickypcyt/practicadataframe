@@ -398,16 +398,18 @@ void showCLI() {
     }
     printf("\n");
 
-    // Imprimir datos
+    
     for (int row = 0; row < dataframe_activo->numFilas; row++) {
         for (int col = 0; col < dataframe_activo->numColumnas; col++) {
-            char *value = (char*)dataframe_activo->columnas[col].datos[row];
-
-            // Si el valor es nulo o está marcado como nulo, no imprimir nada (espacio vacío)
-            if (value == NULL || dataframe_activo->columnas[col].esNulo[row]) {
-                printf("%-20s", "1");  // Dejar el espacio vacío para valores nulos
+            if (dataframe_activo->columnas[col].esNulo[row]) {
+                printf("%-20s", "1");  // Ajustar la longitud para mejor alineación
             } else {
-                printf("%-20s", value);  // Imprimir el valor no nulo
+                // Asegurarse de no intentar imprimir punteros NULL
+                if (dataframe_activo->columnas[col].datos[row] == NULL) {
+                    printf("%-20s", "");  // En caso de que el valor sea NULL, imprimir "NULL"
+                } else {
+                    printf("%-20s", (char *)dataframe_activo->columnas[col].datos[row]);
+                }
             }
         }
         printf("\n");
@@ -428,25 +430,31 @@ void viewCLI(int n) {
 
     // Mostrar encabezados
     for (int j = 0; j < dataframe_activo->numColumnas; j++) {
-        printf("%s\t", dataframe_activo->columnas[j].nombre);
+        printf("%-20s", dataframe_activo->columnas[j].nombre);  // Ajustar la longitud para mejor alineación
     }
     printf("\n");
 
     // Determinar número de filas a mostrar
-    int rows_to_show = n < dataframe_activo->numFilas ? n : dataframe_activo->numFilas;
+    int rows_to_show = (n < dataframe_activo->numFilas) ? n : dataframe_activo->numFilas;
 
     // Mostrar filas de datos
     for (int i = 0; i < rows_to_show; i++) {
         for (int j = 0; j < dataframe_activo->numColumnas; j++) {
             if (dataframe_activo->columnas[j].esNulo[i]) {
-                printf("NULL\t");
+                printf("%-20s", "1");  // Ajustar la longitud para mejor alineación
             } else {
-                printf("%s\t", (char *)dataframe_activo->columnas[j].datos[i]);
+                // Asegurarse de no intentar imprimir punteros NULL
+                if (dataframe_activo->columnas[j].datos[i] == NULL) {
+                    printf("%-20s", "");  // En caso de que el valor sea NULL, imprimir "NULL"
+                } else {
+                    printf("%-20s", (char *)dataframe_activo->columnas[j].datos[i]);
+                }
             }
         }
         printf("\n");
     }
 }
+
 
 // Función de comparación de valores según tipo de datos
 int compararValores(void *a, void *b, TipoDato tipo, int is_descending) {
