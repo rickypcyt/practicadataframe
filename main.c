@@ -68,7 +68,7 @@ void cargarCSV(const char *filename);
 void CLI();
 void print_error(const char *message);
 void tiposColumnas(DataFrame *df);
-void verificarNulos(char *linea);
+void verificarNulos(char *line, int fila);
 int fechaValida(const char *date_str);
 int compararValores(void *a, void *b, TipoDato tipo, int is_descending);
 void metaCLI();
@@ -161,43 +161,60 @@ int contarColumnas(const char *line) {
     return count;
 }
 
-// Manejar valores nulos en CSV
-void verificarNulos(char *linea) {
-    char resultado[MAX_LINE_LENGTH * 2] = {0};
-    int j = 0;
-    int length = strlen(linea);
-    int expecting_value = 1;  // Comenzar esperando un valor
+void verificarNulos(char *linea, int fila) {
+    // Array para almacenar el resultado procesado.
+    char resultado[MAX_LINE_LENGTH * 2] = {0};  
+    int j = 0;  // Índice para recorrer el array de resultado
+    int length = strlen(linea);  // Longitud de la línea original
+    int expecting_value = 1;  // Comienza esperando un valor (no se ha encontrado uno aún)
+    
+    int colIndex = 0;  // Índice de la columna actual (asumimos que empezamos en la columna 0)
 
+    // Recorre cada carácter de la línea (incluyendo el final de la cadena '\0' para asegurarse de procesar el último campo)
     for (int i = 0; i <= length; i++) {
-        // Si encuentra separador o fin de línea, procesar campo
+        // Si encuentra un separador (coma, salto de línea o fin de línea), procesa el campo
         if (i == length || linea[i] == ',' || linea[i] == '\r') {
+            // Si estamos esperando un valor (es decir, encontramos un campo vacío)
             if (expecting_value) {
-                // Insertar 'NULL' para campos vacíos
+                // Insertamos '1' en el resultado para indicar que el campo es nulo (vacío)
                 resultado[j++] = '1';
+
+                // Marcar como nulo en la columna y fila correspondiente
+                dataframe_activo->columnas[colIndex].esNulo[fila] = 1;  // Marcar como nulo
+                // No incrementamos el contador de nulos aquí, ya que eso se hace en cargarCSV
             }
-            
-            // Copiar separadores si no es el último carácter
+
+            // Si no es el último carácter, copia el separador (coma o retorno de carro) al resultado
             if (i < length) {
                 resultado[j++] = linea[i];
             }
 
-            // Después de un separador, esperar un valor para el siguiente campo
+            // Después de procesar un separador, el siguiente valor debe ser un campo (por lo que esperamos un valor)
             expecting_value = 1;
 
-            // Manejar saltos de línea
+            // Si encuentra un salto de línea, agrega un retorno de carro y nueva línea al resultado
             if (linea[i] == '\n' || linea[i] == '\r') {
                 resultado[j++] = '\r';
                 resultado[j++] = '\n';
             }
+
+            // Incrementar el índice de la columna después de procesar un campo
+            colIndex++;
         } else {
+            // Si el carácter no es un separador, se agrega al resultado
             resultado[j++] = linea[i];
-            expecting_value = 0;  // Se encontró un valor no vacío
+            // Ahora no estamos esperando un valor vacío, ya que encontramos uno no vacío
+            expecting_value = 0;
         }
     }
 
-    resultado[j] = '\0';  // Terminar cadena resultante
-    strcpy(linea, resultado); // Sobrescribir línea original
+    // Asegurarse de que la cadena resultante esté correctamente terminada con '\0'
+    resultado[j] = '\0';
+
+    // Copiar el contenido del array resultado de vuelta a la línea original
+    strcpy(linea, resultado);
 }
+
 
 // Validar formato de fecha YYYY-MM-DD
 int fechaValida(const char *date_str) {
@@ -248,7 +265,6 @@ void tiposColumnas(DataFrame *df) {
     }
 }
 
-// Cargar archivo CSV
 void cargarCSV(const char *filename) {
     FILE *file = fopen(filename, "r");
     if (!file) {
@@ -261,13 +277,12 @@ void cargarCSV(const char *filename) {
 
     // Primera pasada: Contar filas y columnas
     while (fgets(line, sizeof(line), file)) {
-        verificarNulos(line);
         numFilas++;
         if (numFilas == 1) {
-            numColumnas = contarColumnas(line);
+            numColumnas = contarColumnas(line);  // Obtener número de columnas (si es necesario)
         }
     }
-    rewind(file);
+    rewind(file);  // Regresar al principio del archivo para la segunda pasada
 
     // Liberar DataFrame existente
     if (dataframe_activo) {
@@ -294,19 +309,17 @@ void cargarCSV(const char *filename) {
 
     // Leer filas de datos
     int fila_actual = 0;
-    while (fgets(line, sizeof(line), file) && fila_actual < numFilas - 1) {
-        verificarNulos(line);
+    while (fgets(line, sizeof(line), file) && fila_actual < numFilas) {
+        // Llamada a verificarNulos para marcar los valores nulos antes de procesar cada fila
+        verificarNulos(line, fila_actual);
+
         token = strtok(line, ",");
         for (int col = 0; token != NULL; col++) {
             cortarEspacios(token);
 
-            // Manejo especial de valores nulos
-            if (strcmp(token, "NULL") == 0) {
-                dataframe_activo->columnas[col].datos[fila_actual] = NULL;
-                dataframe_activo->columnas[col].esNulo[fila_actual] = 1;
-            } else {
+            // Ya se marcaron los nulos en verificarNulos, entonces solo asignamos los valores
+            if (!dataframe_activo->columnas[col].esNulo[fila_actual]) {
                 dataframe_activo->columnas[col].datos[fila_actual] = strdup(token);
-                dataframe_activo->columnas[col].esNulo[fila_actual] = 0;
             }
             token = strtok(NULL, ",");
         }
@@ -323,11 +336,52 @@ void cargarCSV(const char *filename) {
     printf(GREEN "Cargado exitosamente %s con %d filas y %d columnas\n" RESET, 
            filename, dataframe_activo->numFilas, dataframe_activo->numColumnas);
 
-    showCLI();
+    showCLI();  // Mostrar la interfaz de línea de comandos
 
     fclose(file);
 }
 
+
+
+// Función que muestra los metadatos de un DataFrame, incluyendo el nombre de las columnas, su tipo y el número de valores nulos.
+void metaCLI() {
+    // Verifica si hay un DataFrame cargado, si no, muestra un mensaje de error y termina la función.
+    if (!dataframe_activo) {
+        print_error("No hay DataFrame cargado.");  // Función que muestra un mensaje de error
+        return;  // Sale de la función si no hay un DataFrame activo
+    }
+
+    // Recorre todas las columnas del DataFrame para imprimir sus metadatos
+    for (int col = 0; col < dataframe_activo->numColumnas; col++) {
+        int null_count = 0;  // Contador de valores nulos para la columna actual
+
+        // Recorre todas las filas de la columna actual para contar los valores nulos
+        for (int row = 0; row < dataframe_activo->numFilas; row++) {
+            // Si el valor de la fila en la columna es nulo (según el array 'esNulo'), incrementa el contador
+            if (dataframe_activo->columnas[col].esNulo[row]) {
+                null_count++;
+            }
+        }
+
+        // Determina el tipo de la columna y asigna una descripción al tipo
+        char *type_str;  
+        switch(dataframe_activo->columnas[col].tipo) {
+            case TEXTO: type_str = "Texto"; break;      // Si es de tipo TEXTO, se asigna la descripción "Texto"
+            case NUMERICO: type_str = "Numérico"; break; // Si es de tipo NUMERICO, se asigna la descripción "Numérico"
+            case FECHA: type_str = "Fecha"; break;      // Si es de tipo FECHA, se asigna la descripción "Fecha"
+            default: type_str = "Desconocido"; break;   // Si el tipo es desconocido, se asigna "Desconocido"
+        }
+
+        // Imprime los metadatos de la columna: nombre de la columna, tipo y el número de valores nulos
+        // Utiliza colores para mejorar la legibilidad (se asume que se usan macros para color como GREEN y RESET)
+        printf(GREEN "%s: %s (Valores nulos: %d)\n" RESET, 
+               dataframe_activo->columnas[col].nombre,  // Nombre de la columna
+               type_str,                               // Tipo de la columna (Texto, Numérico, Fecha, etc.)
+               null_count);                             // Número de valores nulos en la columna
+    }
+}
+
+// Mostrar DataFrame completo
 // Mostrar DataFrame completo
 void showCLI() {
     if (!dataframe_activo) {
@@ -335,7 +389,8 @@ void showCLI() {
         return;
     }
 
-    printf(WHITE"DataFrame: %s\n" RESET, dataframe_activo->indice);
+    // Mostrar el nombre del DataFrame
+    printf(WHITE "                    DataFrame: %s\n\n" RESET, dataframe_activo->indice);
     
     // Imprimir encabezados
     for (int col = 0; col < dataframe_activo->numColumnas; col++) {
@@ -347,48 +402,20 @@ void showCLI() {
     for (int row = 0; row < dataframe_activo->numFilas; row++) {
         for (int col = 0; col < dataframe_activo->numColumnas; col++) {
             char *value = (char*)dataframe_activo->columnas[col].datos[row];
-            if (value == NULL) {
-                printf("NULL                 ");
+
+            // Si el valor es nulo o está marcado como nulo, no imprimir nada (espacio vacío)
+            if (value == NULL || dataframe_activo->columnas[col].esNulo[row]) {
+                printf("%-20s", "1");  // Dejar el espacio vacío para valores nulos
             } else {
-                printf("%-20s", value);
+                printf("%-20s", value);  // Imprimir el valor no nulo
             }
         }
         printf("\n");
     }
 }
 
-// Mostrar metadatos del DataFrame
-void metaCLI() {
-    if (!dataframe_activo) {
-        print_error("No hay DataFrame cargado.");
-        return;
-    }
 
-    // Recorrer columnas e imprimir metadatos
-    for (int col = 0; col < dataframe_activo->numColumnas; col++) {
-        int null_count = 0;
-        for (int row = 0; row < dataframe_activo->numFilas; row++) {
-            if (dataframe_activo->columnas[col].esNulo[row]) {
-                null_count++;
-            }
-        }
 
-        // Determinar tipo de columna
-        char *type_str;
-        switch(dataframe_activo->columnas[col].tipo) {
-            case TEXTO: type_str = "Texto"; break;
-            case NUMERICO: type_str = "Numérico"; break;
-            case FECHA: type_str = "Fecha"; break;
-            default: type_str = "Desconocido"; break;
-        }
-
-        // Imprimir metadatos de columna
-        printf(GREEN "%s: %s (Valores nulos: %d)\n" RESET, 
-               dataframe_activo->columnas[col].nombre, 
-               type_str, 
-               null_count);
-    }
-}
 
 // Función para ver primeras N filas del DataFrame
 void viewCLI(int n) {
@@ -396,6 +423,8 @@ void viewCLI(int n) {
         print_error("No hay DataFrame cargado.");
         return;
     }
+
+    printf(WHITE"                    DataFrame: %s\n\n" RESET, dataframe_activo->indice);
 
     // Mostrar encabezados
     for (int j = 0; j < dataframe_activo->numColumnas; j++) {
