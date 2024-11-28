@@ -31,3 +31,5 @@ se verifican nulos
 imprimes
 
 otra vez cli y tienes a elegir comandos
+
+faltan algunas cosas a mejorar pero ya las veremos bien.

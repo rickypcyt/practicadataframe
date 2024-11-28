@@ -136,6 +136,7 @@ void CLI() {
     }
 }
 
+static int num_dfs = 0;
 
 void cargarCSV(const char *filename) {
     FILE *file = fopen(filename, "r");
@@ -156,6 +157,9 @@ void cargarCSV(const char *filename) {
     }
     rewind(file);  // Regresar al principio del archivo para la segunda pasada
 
+    char nombre_df[10];
+    snprintf(nombre_df, sizeof(nombre_df), "df%d", num_dfs);
+    num_dfs++; 
     // Liberar DataFrame existente
     if (dataframe_activo) {
         liberarMemoriaDF(dataframe_activo);
@@ -168,7 +172,7 @@ void cargarCSV(const char *filename) {
         fclose(file);
         return;
     }
-    crearDataframe(dataframe_activo, numColumnas, numFilas, "df0");
+    crearDataframe(dataframe_activo, numColumnas, numFilas, nombre_df);
 
     // Leer encabezados
     fgets(line, sizeof(line), file);
