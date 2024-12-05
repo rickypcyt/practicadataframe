@@ -72,6 +72,7 @@ void metaCLI();
 void viewCLI(int n);
 void sortCLI(const char *column_name, int is_descending);
 void showCLI();
+void saveCLI(const char *filename);
 
 // Interfaz de línea de comandos interactiva
 void CLI() {
@@ -88,6 +89,8 @@ void CLI() {
             cargarCSV(input + 5);
         } else if (strcmp(input, "meta") == 0) {
             metaCLI();
+        } else if (strcmp(input, "save") == 0) {
+            saveCLI(input + 5);
         } else if (strncmp(input, "view", 4) == 0) {
             int n = 10; // Mostrar 10 filas por defecto
             
@@ -605,4 +608,72 @@ void sortCLI(const char *column_name, int is_descending) {
 
     printf(GREEN "DataFrame ordenado por columna '%s' en orden %s.\n" RESET, 
            column_name, is_descending ? "descendente" : "ascendente");
+}
+
+void saveCLI(const char *filename) {
+    // Verificar si hay un DataFrame activo
+    if (!dataframe_activo) {
+        print_error("No hay DataFrame activo para guardar.");
+        return;
+    }
+
+    // Verificar si el nombre de archivo termina con .csv
+    char cleaned_filename[MAX_FILENAME];
+    snprintf(cleaned_filename, sizeof(cleaned_filename), "%s", filename);
+    
+    // Eliminar espacios en blanco del nombre de archivo
+    cortarEspacios(cleaned_filename);
+
+    // Verificar que el nombre de archivo no esté vacío y termine con .csv
+    if (strlen(cleaned_filename) == 0) {
+        print_error("Nombre de archivo inválido.");
+        return;
+    }
+
+    // Verificar explícitamente si termina con .csv
+    int len = strlen(cleaned_filename);
+    if (len < 4 || strcmp(cleaned_filename + len - 4, ".csv") != 0) {
+        print_error("El archivo debe tener extensión .csv");
+        return;
+    }
+
+    // Abrir archivo para escritura
+    FILE *file = fopen(cleaned_filename, "w");
+    if (!file) {
+        char error_msg[MAX_FILENAME + 50];
+        snprintf(error_msg, sizeof(error_msg), "No se puede crear el archivo: %s", cleaned_filename);
+        print_error(error_msg);
+        return;
+    }
+
+    // Escribir encabezados (nombres de columnas)
+    for (int col = 0; col < dataframe_activo->numColumnas; col++) {
+        fprintf(file, "%s", dataframe_activo->columnas[col].nombre);
+        if (col < dataframe_activo->numColumnas - 1) {
+            fprintf(file, ",");
+        }
+    }
+    fprintf(file, "\n");
+
+    // Escribir datos
+    for (int row = 0; row < dataframe_activo->numFilas; row++) {
+        for (int col = 0; col < dataframe_activo->numColumnas; col++) {
+            // Si el valor es nulo, escribir cadena vacía
+            if (dataframe_activo->columnas[col].esNulo[row]) {
+                fprintf(file, "");
+            } else {
+                // Escribir valor de la celda
+                char *valor = (char *)dataframe_activo->columnas[col].datos[row];
+                fprintf(file, "%s", valor ? valor : "");
+            }
+            // Añadir coma entre columnas, excepto en la última
+            if (col < dataframe_activo->numColumnas - 1) {
+                fprintf(file, ",");
+            }
+        }
+        // Nueva línea después de cada fila
+        fprintf(file, "\n");
+    }
+    fclose(file);
+    printf(GREEN "DataFrame guardado exitosamente en %s\n" RESET, cleaned_filename);
 }
