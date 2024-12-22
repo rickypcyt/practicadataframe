@@ -5,8 +5,8 @@
 #include <time.h>  // Módulo para parseo de fechas
 
 // Constantes de configuración del sistema
-#define MAX_LINE_LENGTH 1024   // Longitud máxima permitida para una línea
-#define MAX_COLUMNS 100         // Número máximo de columnas en un DataFrame
+#define MAX_LINE_LENGTH 4096   // Longitud máxima permitida para una línea
+#define MAX_COLUMNS 1000         // Número máximo de columnas en un DataFrame
 #define MAX_FILENAME 256        // Longitud máxima del nombre de archivo
 
 // Códigos de color ANSI para salida por consola
@@ -71,8 +71,9 @@ int compararValores(void *a, void *b, TipoDato tipo, int is_descending);
 void metaCLI();
 void viewCLI(int n);
 void sortCLI(const char *column_name, int is_descending);
-void showCLI();
 void saveCLI(const char *filename);
+
+static int num_dfs = 0;
 
 // Interfaz de línea de comandos interactiva
 void CLI() {
@@ -139,8 +140,7 @@ void CLI() {
     }
 }
 
-static int num_dfs = 0;
-
+// Eliminamos la función cortarEspacios ya que no la necesitaremos
 void cargarCSV(const char *filename) {
     FILE *file = fopen(filename, "r");
     if (!file) {
@@ -148,79 +148,107 @@ void cargarCSV(const char *filename) {
         return;
     }
 
-    char line[MAX_LINE_LENGTH];
+    // Primera pasada: Contar filas y columnas de manera segura
+    char *line = NULL;
+    size_t len = 0;
+    ssize_t read;
     int numFilas = 0, numColumnas = 0;
 
-    // Primera pasada: Contar filas y columnas
-    while (fgets(line, sizeof(line), file)) {
+    // Usar getline para manejar líneas de cualquier longitud
+    while ((read = getline(&line, &len, file)) != -1) {
         numFilas++;
         if (numFilas == 1) {
-            numColumnas = contarColumnas(line);  // Obtener número de columnas (si es necesario)
+            numColumnas = contarColumnas(line);
+            if (numColumnas > MAX_COLUMNS) {
+                print_error("Número de columnas excede el límite máximo");
+                free(line);
+                fclose(file);
+                return;
+            }
         }
     }
-    rewind(file);  // Regresar al principio del archivo para la segunda pasada
+
+    // Verificar si se encontraron datos
+    if (numFilas == 0 || numColumnas == 0) {
+        print_error("Archivo vacío o inválido");
+        free(line);
+        fclose(file);
+        return;
+    }
+
+    // Reiniciar archivo y buffer
+    rewind(file);
+    free(line);
+    line = NULL;
+    len = 0;
 
     char nombre_df[10];
     snprintf(nombre_df, sizeof(nombre_df), "df%d", num_dfs);
-    num_dfs++; 
-    // Liberar DataFrame existente
+    num_dfs++;
+
+    // Liberar DataFrame existente si hay uno
     if (dataframe_activo) {
         liberarMemoriaDF(dataframe_activo);
+        dataframe_activo = NULL;
     }
 
     // Crear nuevo DataFrame
     dataframe_activo = malloc(sizeof(DataFrame));
     if (!dataframe_activo) {
         print_error("Fallo en asignación de memoria para DataFrame");
+        free(line);
         fclose(file);
         return;
     }
-    crearDataframe(dataframe_activo, numColumnas, numFilas, nombre_df);
+
+    crearDataframe(dataframe_activo, numColumnas, numFilas - 1, nombre_df);
 
     // Leer encabezados
-    fgets(line, sizeof(line), file);
-    char *token = strtok(line, ",");
-    for (int col = 0; token != NULL; col++) {
-        cortarEspacios(token);
-        strncpy(dataframe_activo->columnas[col].nombre, token, sizeof(dataframe_activo->columnas[col].nombre) - 1);
-        token = strtok(NULL, ",");
+    if ((read = getline(&line, &len, file)) != -1) {
+        char *token = strtok(line, ",\n\r");
+        int col = 0;
+        while (token && col < numColumnas) {
+            strncpy(dataframe_activo->columnas[col].nombre, token, sizeof(dataframe_activo->columnas[col].nombre) - 1);
+            dataframe_activo->columnas[col].nombre[sizeof(dataframe_activo->columnas[col].nombre) - 1] = '\0';
+            token = strtok(NULL, ",\n\r");
+            col++;
+        }
     }
 
     // Leer filas de datos
     int fila_actual = 0;
-    while (fgets(line, sizeof(line), file) && fila_actual < numFilas) {
-        // Llamada a verificarNulos para marcar los valores nulos antes de procesar cada fila
+    while ((read = getline(&line, &len, file)) != -1 && fila_actual < numFilas - 1) {
         verificarNulos(line, fila_actual);
 
-        token = strtok(line, ",");
-        for (int col = 0; token != NULL; col++) {
-            cortarEspacios(token);
-
-            // Ya se marcaron los nulos en verificarNulos, entonces solo asignamos los valores
+        char *token = strtok(line, ",\n\r");
+        int col = 0;
+        while (token && col < numColumnas) {
             if (!dataframe_activo->columnas[col].esNulo[fila_actual]) {
                 dataframe_activo->columnas[col].datos[fila_actual] = strdup(token);
             }
-            token = strtok(NULL, ",");
+            token = strtok(NULL, ",\n\r");
+            col++;
         }
         fila_actual++;
     }
 
-    // Detectar tipos de columnas
-    tiposColumnas(dataframe_activo);
+    // Liberar recursos
+    free(line);
+    fclose(file);
 
-    // Actualizar prompt
+    // Detectar tipos y actualizar prompt
+    tiposColumnas(dataframe_activo);
     snprintf(promptTerminal, sizeof(promptTerminal), "[%s: %d,%d]:> ", 
              dataframe_activo->indice, dataframe_activo->numFilas, dataframe_activo->numColumnas);
 
     printf(GREEN "Cargado exitosamente %s con %d filas y %d columnas\n" RESET, 
            filename, dataframe_activo->numFilas, dataframe_activo->numColumnas);
-
-    showCLI();  // Mostrar la interfaz de línea de comandos
-
-    fclose(file);
 }
 
 void verificarNulos(char *linea, int fila) {
+    // Eliminar espacios al final de la línea
+    cortarEspacios(linea);  // Llama a la función para eliminar los espacios innecesarios
+
     // Array para almacenar el resultado procesado.
     char resultado[MAX_LINE_LENGTH * 2] = {0};  
     int j = 0;  // Índice para recorrer el array de resultado
@@ -276,19 +304,29 @@ void verificarNulos(char *linea, int fila) {
 
 // Función para eliminar espacios en blanco de una cadena
 void cortarEspacios(char *str) {
+    size_t len = strlen(str);
+    if (len > 0 && str[len-1] == '\n') {
+        str[len-1] = '\0';  // Elimina el salto de línea al final
+    }
+
+    // Eliminar espacios en blanco al inicio de la cadena
     char *start = str;
-    char *end = str + strlen(str) - 1;
+    while (*start == ' ') {
+        start++;
+    }
 
-    // Eliminar espacios al inicio
-    while (isspace(*start)) start++;
-    
-    // Eliminar espacios al final
-    while (end > start && isspace(*end)) end--;
+    // Mover la cadena procesada al inicio
+    if (start != str) {
+        memmove(str, start, strlen(start) + 1);
+    }
 
-    // Reajustar cadena
-    *(end + 1) = '\0';
-    memmove(str, start, end - start + 2);
+    // Eliminar espacios en blanco al final
+    len = strlen(str);
+    while (len > 0 && str[len - 1] == ' ') {
+        str[--len] = '\0';
+    }
 }
+
 
 // Contar número de columnas en una línea CSV
 int contarColumnas(const char *line) {
@@ -399,26 +437,50 @@ void print_error(const char *message) {
     fprintf(stderr, RED "ERROR: %s\n" RESET, message);
 }
 
-// Inicializar estructura de un DataFrame
+
+// Función modificada para manejar la memoria de manera más segura
 void crearDataframe(DataFrame *df, int columnas, int rows, const char *nombre) {
-    // Reservar memoria para columnas
-    df->columnas = malloc(columnas * sizeof(Columna));
+    if (!df || columnas <= 0 || rows <= 0 || !nombre) {
+        print_error("Parámetros inválidos en crearDataframe");
+        return;
+    }
+
+    // Verificar límites máximos
+    if (columnas > MAX_COLUMNS) {
+        print_error("Número de columnas excede el límite máximo");
+        return;
+    }
+
+    // Reservar memoria para columnas con verificación
+    df->columnas = calloc(columnas, sizeof(Columna));
     if (!df->columnas) {
         print_error("Fallo en asignación de memoria para columnas");
         return;
     }
     
-    // Establecer metadatos del DataFrame
     df->numColumnas = columnas;
     df->numFilas = rows;
     strncpy(df->indice, nombre, sizeof(df->indice) - 1);
+    df->indice[sizeof(df->indice) - 1] = '\0';
 
-    // Inicializar cada columna con memoria para datos
+    // Inicializar cada columna
     for (int i = 0; i < columnas; i++) {
-        df->columnas[i].datos = malloc(rows * sizeof(void*));
-        df->columnas[i].esNulo = malloc(rows * sizeof(int));
+        // Usar calloc en lugar de malloc para inicializar a 0
+        df->columnas[i].datos = calloc(rows, sizeof(void*));
+        df->columnas[i].esNulo = calloc(rows, sizeof(int));
+        
+        if (!df->columnas[i].datos || !df->columnas[i].esNulo) {
+            // Si falla la asignación, liberar memoria previamente asignada
+            for (int j = 0; j < i; j++) {
+                free(df->columnas[j].datos);
+                free(df->columnas[j].esNulo);
+            }
+            free(df->columnas);
+            print_error("Fallo en asignación de memoria para datos de columna");
+            return;
+        }
+        
         df->columnas[i].numFilas = rows;
-        memset(df->columnas[i].esNulo, 0, rows * sizeof(int));
     }
 }
 
@@ -491,38 +553,6 @@ void metaCLI() {
 }
 
 // Mostrar DataFrame completo
-void showCLI() {
-    if (!dataframe_activo) {
-        print_error("No hay DataFrame cargado.");
-        return;
-    }
-
-    // Mostrar el nombre del DataFrame
-    printf(WHITE "                    DataFrame: %s\n\n" RESET, dataframe_activo->indice);
-    
-    // Imprimir encabezados
-    for (int col = 0; col < dataframe_activo->numColumnas; col++) {
-        printf("%-20s", dataframe_activo->columnas[col].nombre);
-    }
-    printf("\n");
-
-    
-    for (int row = 0; row < dataframe_activo->numFilas; row++) {
-        for (int col = 0; col < dataframe_activo->numColumnas; col++) {
-            if (dataframe_activo->columnas[col].esNulo[row]) {
-                printf("%-20s", "1");  // Ajustar la longitud para mejor alineación
-            } else {
-                // Asegurarse de no intentar imprimir punteros NULL
-                if (dataframe_activo->columnas[col].datos[row] == NULL) {
-                    printf("%-20s", "");  // En caso de que el valor sea NULL, imprimir "NULL"
-                } else {
-                    printf("%-20s", (char *)dataframe_activo->columnas[col].datos[row]);
-                }
-            }
-        }
-        printf("\n");
-    }
-}
 
 // Función para ver primeras N filas del DataFrame
 void viewCLI(int n) {
@@ -535,7 +565,10 @@ void viewCLI(int n) {
 
     // Mostrar encabezados
     for (int j = 0; j < dataframe_activo->numColumnas; j++) {
-        printf("%-20s", dataframe_activo->columnas[j].nombre);  // Ajustar la longitud para mejor alineación
+        printf("%s", dataframe_activo->columnas[j].nombre);
+        if (j < dataframe_activo->numColumnas - 1) {
+            printf(",");
+        }
     }
     printf("\n");
 
@@ -546,20 +579,22 @@ void viewCLI(int n) {
     for (int i = 0; i < rows_to_show; i++) {
         for (int j = 0; j < dataframe_activo->numColumnas; j++) {
             if (dataframe_activo->columnas[j].esNulo[i]) {
-                printf("%-20s", "1");  // Ajustar la longitud para mejor alineación
+                printf("1");
             } else {
-                // Asegurarse de no intentar imprimir punteros NULL
                 if (dataframe_activo->columnas[j].datos[i] == NULL) {
-                    printf("%-20s", "");  // En caso de que el valor sea NULL, imprimir "NULL"
+                    printf("");
                 } else {
-                    printf("%-20s", (char *)dataframe_activo->columnas[j].datos[i]);
+                    printf("%s", (char *)dataframe_activo->columnas[j].datos[i]);
                 }
+            }
+            // Agregar coma si no es la última columna
+            if (j < dataframe_activo->numColumnas - 1) {
+                printf(",");
             }
         }
         printf("\n");
     }
 }
-
 // Función para ordenar DataFrame
 void sortCLI(const char *column_name, int is_descending) {
     if (!dataframe_activo) {
