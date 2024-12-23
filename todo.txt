@@ -10,12 +10,13 @@ Comando meta para mostrar metadatos
 Comando view (n) mostrar primeras filas del dataframe
 Comando sort ordenar de asc o des mediante array indice
 
+Comando "df0 df1 df2" cambiar de dataframe
+
 Comando save guardar dataframe en csv con nombre a elegir facil
 Comando filtrar nombre_columna operador valor 
 Comando delnull nombre_columna elimina del dataframe filas que tengan valores nulos en la col indicada
 Comando delcolum nombre_columna elimina toda la columna indicada
 Comando quarter nombre_columna nombre_nueva_columna 
-Comando "df0 df1 df2" cambiar de dataframe
 
 Comparar valores no ready aun 
 Hacer que pueda lodear otro dataframe usando el comando de load y ahi meterle al nodo de la lista de dataframes

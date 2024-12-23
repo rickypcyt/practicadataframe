@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <ctype.h>
 #include <time.h>  // Módulo para parseo de fechas
 
 // Constantes de configuración del sistema
