@@ -5,7 +5,7 @@
 
 // Constantes de configuración del sistema
 #define MAX_LINE_LENGTH 4096   // Longitud máxima permitida para una línea
-#define MAX_COLUMNS 1000         // Número máximo de columnas en un DataFrame
+#define MAX_COLUMNS 1000         // Número máximo de columnas en un df
 #define MAX_FILENAME 256        // Longitud máxima del nombre de archivo
 
 // Códigos de color ANSI para salida por consola
@@ -21,58 +21,62 @@ typedef enum {
     FECHA       // Tipo fecha
 } TipoDato;
 
-// Estructura de Columna: Representa una columna en el DataFrame
+// Estructura de Columna: Representa una columna en el df
 typedef struct {
     char nombre[50];          // Nombre de la columna
     TipoDato tipo;          // Tipo de datos de la columna
-    void **datos;            // Arreglo de punteros a datos
-    int *esNulo;           // Indicador de valores nulos
+    char **datos;            // Arreglo de punteros a datos
+    unsigned int *esNulo;           // Indicador de valores nulos
     int numFilas;          // Número de filas en la columna
 } Columna;
 
-// Estructura de DataFrame: Contenedor principal de datos
+// Estructura de df: Contenedor principal de datos
 typedef struct {
     Columna *columnas;        // Arreglo de columnas
     int numColumnas;       // Número total de columnas
     int numFilas;          // Número total de filas
-    char indice[20];          // Nombre del DataFrame
-} DataFrame;
+    char indice[20];          // Nombre del df
+} Dataframe;
 
 // Alias para tipos FECHA: 'Fecha' alias de 'struct tm' (#include <time.h>)
 typedef struct tm Fecha;
 
 // Estructura para representar un nodo de la lista
 typedef struct NodoLista{
+    Dataframe *df; // puntero a Dataframe
     struct NodoLista *siguiente; // Puntero al siguiente nodo de la lista
 } Nodo;
+
 // Estructura para representar la lista de Dataframe’s
 typedef struct {
-    int numDFs; // Número de dataframes almacenados en la lista
+    int numDFs; // Número de Dataframes almacenados en la lista
     Nodo *primero; // Puntero al primer Nodo de la lista
 } Lista;
 
+// Add this with other global variables
+Lista listaDF;  // Global variable to store all dataframes
+Dataframe *currentDF = NULL;  // Variable global que apunta al dataframe activo
+
 // Variables globales para gestión del sistema
-DataFrame *dataframe_activo = NULL;  // DataFrame activo actualmente
 char promptTerminal[MAX_LINE_LENGTH] = "[?]:> ";  // Prompt de la interfaz interactiva
 
 // Prototipos de todas las funciones utilizadas
-void crearDataframe(DataFrame *df, int columnas, int rows, const char *nombre);
-void liberarMemoriaDF(DataFrame *df);
+void crearDataframe(Dataframe *currentDF, int columnas, int rows, const char *nombre);
+void liberarMemoriaDF(Dataframe *currentDF);
 int contarColumnas(const char *line);
 void cortarEspacios(char *str);
 void cargarCSV(const char *filename);
 void CLI();
 void print_error(const char *message);
-void tiposColumnas(DataFrame *df);
-void verificarNulos(char *line, int fila);
+void tiposColumnas(Dataframe *df);
+void verificarNulos(char *line, int fila, Dataframe *df);
 int fechaValida(const char *date_str);
 int compararValores(void *a, void *b, TipoDato tipo, int is_descending);
 void metaCLI();
 void viewCLI(int n);
 void sortCLI(const char *column_name, int is_descending);
 void saveCLI(const char *filename);
-
-static int num_dfs = 0;
+void cambiarDF();
 
 // Interfaz de línea de comandos interactiva
 void CLI() {
@@ -133,10 +137,18 @@ void CLI() {
             }
 
             sortCLI(column_name, is_descending);
-        } else {
+        } else if (strncmp(input, "df", 5) == 0){
+            int n = 0;
+        }
+        
+        else {
             printf("Comando desconocido: %s\n", input);
         }
     }
+}
+
+void cambiarDF() {
+    printf("Hello World\n");
 }
 
 // Eliminamos la función cortarEspacios ya que no la necesitaremos
@@ -182,33 +194,33 @@ void cargarCSV(const char *filename) {
     len = 0;
 
     char nombre_df[10];
-    snprintf(nombre_df, sizeof(nombre_df), "df%d", num_dfs);
-    num_dfs++;
+    snprintf(nombre_df, sizeof(nombre_df), "df%d", listaDF.numDFs);
+    listaDF.numDFs++;
 
-    // Liberar DataFrame existente si hay uno
-    if (dataframe_activo) {
-        liberarMemoriaDF(dataframe_activo);
-        dataframe_activo = NULL;
+    // Liberar df existente si hay uno
+    if (currentDF) {
+        liberarMemoriaDF(currentDF);
+        currentDF = NULL;
     }
 
-    // Crear nuevo DataFrame
-    dataframe_activo = malloc(sizeof(DataFrame));
-    if (!dataframe_activo) {
-        print_error("Fallo en asignación de memoria para DataFrame");
+    // Crear nuevo df
+    currentDF = malloc(sizeof(Dataframe));
+    if (!currentDF) {
+        print_error("Fallo en asignación de memoria para df");
         free(line);
         fclose(file);
         return;
     }
 
-    crearDataframe(dataframe_activo, numColumnas, numFilas - 1, nombre_df);
+    crearDataframe(currentDF, numColumnas, numFilas - 1, nombre_df);
 
     // Leer encabezados
     if ((read = getline(&line, &len, file)) != -1) {
         char *token = strtok(line, ",\n\r");
         int col = 0;
         while (token && col < numColumnas) {
-            strncpy(dataframe_activo->columnas[col].nombre, token, sizeof(dataframe_activo->columnas[col].nombre) - 1);
-            dataframe_activo->columnas[col].nombre[sizeof(dataframe_activo->columnas[col].nombre) - 1] = '\0';
+            strncpy(currentDF->columnas[col].nombre, token, sizeof(currentDF->columnas[col].nombre) - 1);
+            currentDF->columnas[col].nombre[sizeof(currentDF->columnas[col].nombre) - 1] = '\0';
             token = strtok(NULL, ",\n\r");
             col++;
         }
@@ -217,13 +229,13 @@ void cargarCSV(const char *filename) {
     // Leer filas de datos
     int fila_actual = 0;
     while ((read = getline(&line, &len, file)) != -1 && fila_actual < numFilas - 1) {
-        verificarNulos(line, fila_actual);
+        verificarNulos(line, fila_actual,currentDF);
 
         char *token = strtok(line, ",\n\r");
         int col = 0;
         while (token && col < numColumnas) {
-            if (!dataframe_activo->columnas[col].esNulo[fila_actual]) {
-                dataframe_activo->columnas[col].datos[fila_actual] = strdup(token);
+            if (!currentDF->columnas[col].esNulo[fila_actual]) {
+                currentDF->columnas[col].datos[fila_actual] = strdup(token);
             }
             token = strtok(NULL, ",\n\r");
             col++;
@@ -236,15 +248,15 @@ void cargarCSV(const char *filename) {
     fclose(file);
 
     // Detectar tipos y actualizar prompt
-    tiposColumnas(dataframe_activo);
+    tiposColumnas(currentDF);
     snprintf(promptTerminal, sizeof(promptTerminal), "[%s: %d,%d]:> ", 
-             dataframe_activo->indice, dataframe_activo->numFilas, dataframe_activo->numColumnas);
+             currentDF->indice, currentDF->numFilas, currentDF->numColumnas);
 
     printf(GREEN "Cargado exitosamente %s con %d filas y %d columnas\n" RESET, 
-           filename, dataframe_activo->numFilas, dataframe_activo->numColumnas);
+           filename, currentDF->numFilas, currentDF->numColumnas);
 }
 
-void verificarNulos(char *linea, int fila) {
+void verificarNulos(char *linea, int fila, Dataframe *df) {
     // Eliminar espacios al final de la línea
     cortarEspacios(linea);  // Llama a la función para eliminar los espacios innecesarios
 
@@ -266,7 +278,7 @@ void verificarNulos(char *linea, int fila) {
                 resultado[j++] = '1';
 
                 // Marcar como nulo en la columna y fila correspondiente
-                dataframe_activo->columnas[colIndex].esNulo[fila] = 1;  // Marcar como nulo
+                currentDF->columnas[colIndex].esNulo[fila] = 1;  // Marcar como nulo
                 // No incrementamos el contador de nulos aquí, ya que eso se hace en cargarCSV
             }
 
@@ -353,9 +365,9 @@ int fechaValida(const char *date_str) {
 }
 
 // Detectar tipos de columnas: Prioridad Fecha > Numérico > Texto
-void tiposColumnas(DataFrame *df) {
+void tiposColumnas(Dataframe *df) {
     for (int col = 0; col < df->numColumnas; col++) {
-        df->columnas[col].tipo = TEXTO;  // Tipo por defecto
+        currentDF->columnas[col].tipo = TEXTO;  // Tipo por defecto
         int is_numeric = 1;
         int is_date = 1;
 
@@ -438,8 +450,8 @@ void print_error(const char *message) {
 
 
 // Función modificada para manejar la memoria de manera más segura
-void crearDataframe(DataFrame *df, int columnas, int rows, const char *nombre) {
-    if (!df || columnas <= 0 || rows <= 0 || !nombre) {
+void crearDataframe(Dataframe *currentDF, int columnas, int rows, const char *nombre) {
+    if (!currentDF || columnas <= 0 || rows <= 0 || !nombre) {
         print_error("Parámetros inválidos en crearDataframe");
         return;
     }
@@ -451,41 +463,41 @@ void crearDataframe(DataFrame *df, int columnas, int rows, const char *nombre) {
     }
 
     // Reservar memoria para columnas con verificación
-    df->columnas = calloc(columnas, sizeof(Columna));
-    if (!df->columnas) {
+    currentDF->columnas = calloc(columnas, sizeof(Columna));
+    if (!currentDF->columnas) {
         print_error("Fallo en asignación de memoria para columnas");
         return;
     }
     
-    df->numColumnas = columnas;
-    df->numFilas = rows;
-    strncpy(df->indice, nombre, sizeof(df->indice) - 1);
-    df->indice[sizeof(df->indice) - 1] = '\0';
+    currentDF->numColumnas = columnas;
+    currentDF->numFilas = rows;
+    strncpy(currentDF->indice, nombre, sizeof(currentDF->indice) - 1);
+    currentDF->indice[sizeof(currentDF->indice) - 1] = '\0';
 
     // Inicializar cada columna
     for (int i = 0; i < columnas; i++) {
         // Usar calloc en lugar de malloc para inicializar a 0
-        df->columnas[i].datos = calloc(rows, sizeof(void*));
-        df->columnas[i].esNulo = calloc(rows, sizeof(int));
+        currentDF->columnas[i].datos = calloc(rows, sizeof(void*));
+        currentDF->columnas[i].esNulo = calloc(rows, sizeof(int));
         
-        if (!df->columnas[i].datos || !df->columnas[i].esNulo) {
+        if (!currentDF->columnas[i].datos || !currentDF->columnas[i].esNulo) {
             // Si falla la asignación, liberar memoria previamente asignada
             for (int j = 0; j < i; j++) {
-                free(df->columnas[j].datos);
-                free(df->columnas[j].esNulo);
+                free(currentDF->columnas[j].datos);
+                free(currentDF->columnas[j].esNulo);
             }
-            free(df->columnas);
+            free(currentDF->columnas);
             print_error("Fallo en asignación de memoria para datos de columna");
             return;
         }
         
-        df->columnas[i].numFilas = rows;
+        currentDF->columnas[i].numFilas = rows;
     }
 }
 
-// Liberar memoria de un DataFrame
-void liberarMemoriaDF(DataFrame *df) {
-    if (df) {
+// Liberar memoria de un currentDF
+void liberarMemoriaDF(Dataframe *df) {
+    if (currentDF) {
         // Liberar memoria de cada columna
         for (int i = 0; i < df->numColumnas; i++) {
             // Liberar memoria de cada elemento de datos
@@ -496,7 +508,7 @@ void liberarMemoriaDF(DataFrame *df) {
             free(df->columnas[i].datos);
             free(df->columnas[i].esNulo);
         }
-        // Liberar estructura de columnas y DataFrame
+        // Liberar estructura de columnas y currentDF
         free(df->columnas);
         free(df);
     }
@@ -513,29 +525,29 @@ int main() {
     return 0;
 }
 
-// Función que muestra los metadatos de un DataFrame, incluyendo el nombre de las columnas, su tipo y el número de valores nulos.
+// Función que muestra los metadatos de un currentDF, incluyendo el nombre de las columnas, su tipo y el número de valores nulos.
 void metaCLI() {
-    // Verifica si hay un DataFrame cargado, si no, muestra un mensaje de error y termina la función.
-    if (!dataframe_activo) {
-        print_error("No hay DataFrame cargado.");  // Función que muestra un mensaje de error
-        return;  // Sale de la función si no hay un DataFrame activo
+    // Verifica si hay un currentDF cargado, si no, muestra un mensaje de error y termina la función.
+    if (!currentDF) {
+        print_error("No hay currentDF cargado.");  // Función que muestra un mensaje de error
+        return;  // Sale de la función si no hay un currentDF activo
     }
 
-    // Recorre todas las columnas del DataFrame para imprimir sus metadatos
-    for (int col = 0; col < dataframe_activo->numColumnas; col++) {
+    // Recorre todas las columnas del currentDF para imprimir sus metadatos
+    for (int col = 0; col < currentDF->numColumnas; col++) {
         int null_count = 0;  // Contador de valores nulos para la columna actual
 
         // Recorre todas las filas de la columna actual para contar los valores nulos
-        for (int row = 0; row < dataframe_activo->numFilas; row++) {
+        for (int row = 0; row < currentDF->numFilas; row++) {
             // Si el valor de la fila en la columna es nulo (según el array 'esNulo'), incrementa el contador
-            if (dataframe_activo->columnas[col].esNulo[row]) {
+            if (currentDF->columnas[col].esNulo[row]) {
                 null_count++;
             }
         }
 
         // Determina el tipo de la columna y asigna una descripción al tipo
         char *type_str;  
-        switch(dataframe_activo->columnas[col].tipo) {
+        switch(currentDF->columnas[col].tipo) {
             case TEXTO: type_str = "Texto"; break;      // Si es de tipo TEXTO, se asigna la descripción "Texto"
             case NUMERICO: type_str = "Numérico"; break; // Si es de tipo NUMERICO, se asigna la descripción "Numérico"
             case FECHA: type_str = "Fecha"; break;      // Si es de tipo FECHA, se asigna la descripción "Fecha"
@@ -545,66 +557,66 @@ void metaCLI() {
         // Imprime los metadatos de la columna: nombre de la columna, tipo y el número de valores nulos
         // Utiliza colores para mejorar la legibilidad (se asume que se usan macros para color como GREEN y RESET)
         printf(GREEN "%s: %s (Valores nulos: %d)\n" RESET, 
-               dataframe_activo->columnas[col].nombre,  // Nombre de la columna
+               currentDF->columnas[col].nombre,  // Nombre de la columna
                type_str,                               // Tipo de la columna (Texto, Numérico, Fecha, etc.)
                null_count);                             // Número de valores nulos en la columna
     }
 }
 
-// Mostrar DataFrame completo
+// Mostrar currentDF completo
 
-// Función para ver primeras N filas del DataFrame
+// Función para ver primeras N filas del currentDF
 void viewCLI(int n) {
-    if (!dataframe_activo) {
-        print_error("No hay DataFrame cargado.");
+    if (!currentDF) {
+        print_error("No hay currentDF cargado.");
         return;
     }
 
-    printf(WHITE"                    DataFrame: %s\n\n" RESET, dataframe_activo->indice);
+    printf(WHITE"                    df: %s\n\n" RESET, currentDF->indice);
 
     // Mostrar encabezados
-    for (int j = 0; j < dataframe_activo->numColumnas; j++) {
-        printf("%s", dataframe_activo->columnas[j].nombre);
-        if (j < dataframe_activo->numColumnas - 1) {
+    for (int j = 0; j < currentDF->numColumnas; j++) {
+        printf("%s", currentDF->columnas[j].nombre);
+        if (j < currentDF->numColumnas - 1) {
             printf(",");
         }
     }
     printf("\n");
 
     // Determinar número de filas a mostrar
-    int rows_to_show = (n < dataframe_activo->numFilas) ? n : dataframe_activo->numFilas;
+    int rows_to_show = (n < currentDF->numFilas) ? n : currentDF->numFilas;
 
     // Mostrar filas de datos
     for (int i = 0; i < rows_to_show; i++) {
-        for (int j = 0; j < dataframe_activo->numColumnas; j++) {
-            if (dataframe_activo->columnas[j].esNulo[i]) {
+        for (int j = 0; j < currentDF->numColumnas; j++) {
+            if (currentDF->columnas[j].esNulo[i]) {
                 printf("1");
             } else {
-                if (dataframe_activo->columnas[j].datos[i] == NULL) {
+                if (currentDF->columnas[j].datos[i] == NULL) {
                     printf("");
                 } else {
-                    printf("%s", (char *)dataframe_activo->columnas[j].datos[i]);
+                    printf("%s", (char *)currentDF->columnas[j].datos[i]);
                 }
             }
             // Agregar coma si no es la última columna
-            if (j < dataframe_activo->numColumnas - 1) {
+            if (j < currentDF->numColumnas - 1) {
                 printf(",");
             }
         }
         printf("\n");
     }
 }
-// Función para ordenar DataFrame
+// Función para ordenar currentDF
 void sortCLI(const char *column_name, int is_descending) {
-    if (!dataframe_activo) {
-        print_error("No hay DataFrame cargado.");
+    if (!currentDF) {
+        print_error("No hay df cargado.");
         return;
     }
 
     // Buscar índice de la columna
     int column_index = -1;
-    for (int i = 0; i < dataframe_activo->numColumnas; i++) {
-        if (strcmp(dataframe_activo->columnas[i].nombre, column_name) == 0) {
+    for (int i = 0; i < currentDF->numColumnas; i++) {
+        if (strcmp(currentDF->columnas[i].nombre, column_name) == 0) {
             column_index = i;
             break;
         }
@@ -616,38 +628,38 @@ void sortCLI(const char *column_name, int is_descending) {
     }
 
     // Obtener tipo de datos de la columna
-    TipoDato column_type = dataframe_activo->columnas[column_index].tipo;
+    TipoDato column_type = currentDF->columnas[column_index].tipo;
 
     // Algoritmo de ordenamiento de burbuja
-    for (int i = 0; i < dataframe_activo->numFilas - 1; i++) {
-        for (int j = 0; j < dataframe_activo->numFilas - i - 1; j++) {
-            void *val1 = dataframe_activo->columnas[column_index].datos[j];
-            void *val2 = dataframe_activo->columnas[column_index].datos[j+1];
+    for (int i = 0; i < currentDF->numFilas - 1; i++) {
+        for (int j = 0; j < currentDF->numFilas - i - 1; j++) {
+            void *val1 = currentDF->columnas[column_index].datos[j];
+            void *val2 = currentDF->columnas[column_index].datos[j+1];
 
             if (compararValores(val1, val2, column_type, is_descending) > 0) {
                 // Intercambiar datos de todas las columnas
-                for (int col = 0; col < dataframe_activo->numColumnas; col++) {
-                    void *temp_data = dataframe_activo->columnas[col].datos[j];
-                    dataframe_activo->columnas[col].datos[j] = dataframe_activo->columnas[col].datos[j+1];
-                    dataframe_activo->columnas[col].datos[j+1] = temp_data;
+                for (int col = 0; col < currentDF->numColumnas; col++) {
+                    void *temp_data = currentDF->columnas[col].datos[j];
+                    currentDF->columnas[col].datos[j] = currentDF->columnas[col].datos[j+1];
+                    currentDF->columnas[col].datos[j+1] = temp_data;
 
                     // Intercambiar valores de nulidad
-                    int temp_null = dataframe_activo->columnas[col].esNulo[j];
-                    dataframe_activo->columnas[col].esNulo[j] = dataframe_activo->columnas[col].esNulo[j+1];
-                    dataframe_activo->columnas[col].esNulo[j+1] = temp_null;
+                    int temp_null = currentDF->columnas[col].esNulo[j];
+                    currentDF->columnas[col].esNulo[j] = currentDF->columnas[col].esNulo[j+1];
+                    currentDF->columnas[col].esNulo[j+1] = temp_null;
                 }
             }
         }
     }
 
-    printf(GREEN "DataFrame ordenado por columna '%s' en orden %s.\n" RESET, 
+    printf(GREEN "currentDF ordenado por columna '%s' en orden %s.\n" RESET, 
            column_name, is_descending ? "descendente" : "ascendente");
 }
 
 void saveCLI(const char *filename) {
-    // Verificar si hay un DataFrame activo
-    if (!dataframe_activo) {
-        print_error("No hay DataFrame activo para guardar.");
+    // Verificar si hay un currentDF activo
+    if (!currentDF) {
+        print_error("No hay currentDF activo para guardar.");
         return;
     }
 
@@ -681,27 +693,27 @@ void saveCLI(const char *filename) {
     }
 
     // Escribir encabezados (nombres de columnas)
-    for (int col = 0; col < dataframe_activo->numColumnas; col++) {
-        fprintf(file, "%s", dataframe_activo->columnas[col].nombre);
-        if (col < dataframe_activo->numColumnas - 1) {
+    for (int col = 0; col < currentDF->numColumnas; col++) {
+        fprintf(file, "%s", currentDF->columnas[col].nombre);
+        if (col < currentDF->numColumnas - 1) {
             fprintf(file, ",");
         }
     }
     fprintf(file, "\n");
 
     // Escribir datos
-    for (int row = 0; row < dataframe_activo->numFilas; row++) {
-        for (int col = 0; col < dataframe_activo->numColumnas; col++) {
+    for (int row = 0; row < currentDF->numFilas; row++) {
+        for (int col = 0; col < currentDF->numColumnas; col++) {
             // Si el valor es nulo, escribir cadena vacía
-            if (dataframe_activo->columnas[col].esNulo[row]) {
+            if (currentDF->columnas[col].esNulo[row]) {
                 fprintf(file, "");
             } else {
                 // Escribir valor de la celda
-                char *valor = (char *)dataframe_activo->columnas[col].datos[row];
+                char *valor = (char *)currentDF->columnas[col].datos[row];
                 fprintf(file, "%s", valor ? valor : "");
             }
             // Añadir coma entre columnas, excepto en la última
-            if (col < dataframe_activo->numColumnas - 1) {
+            if (col < currentDF->numColumnas - 1) {
                 fprintf(file, ",");
             }
         }
@@ -709,5 +721,5 @@ void saveCLI(const char *filename) {
         fprintf(file, "\n");
     }
     fclose(file);
-    printf(GREEN "DataFrame guardado exitosamente en %s\n" RESET, cleaned_filename);
+    printf(GREEN "df guardado exitosamente en %s\n" RESET, cleaned_filename);
 }

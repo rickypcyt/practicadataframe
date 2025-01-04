@@ -8,8 +8,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": true,
-      "cwd": "c:/Users/ricar/Documents/CODEO 2024/c-fp/practica",
-      "program": "c:/Users/ricar/Documents/CODEO 2024/c-fp/practica/build/Debug/outDebug",
+      "cwd": "/home/ricky/coding/practicadataframe/",
+      "program": "/home/ricky/coding/practicadataframe/main.exe",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [
