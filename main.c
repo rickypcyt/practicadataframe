@@ -80,8 +80,7 @@ void inicializarLista() {
 }
 
 // Prototipos de todas las funciones utilizadas
-void crearDataframe(Dataframe *currentDF, int columnas, int rows,
-                    const char *nombre);
+void crearDataframe(Dataframe *currentDF, int columnas, int rows, const char *nombre);
 void liberarMemoriaDF(Dataframe *currentDF);
 int contarColumnas(const char *line);
 void cortarEspacios(char *str);
@@ -96,8 +95,12 @@ void metaCLI();
 void viewCLI(int n);
 void sortCLI(const char *column_name, int is_descending);
 void saveCLI(const char *filename);
-void cambiarDF();
 void agregarDataframe(Dataframe *nuevoDF);
+void cambiarDataframe(Lista *lista, int index);
+void contarFilasYColumnas(const char *filename, int *numFilas, int *numColumnas);
+void leerEncabezados(FILE *file, Dataframe *df, int numColumnas);
+void leerFilas(FILE *file, Dataframe *df, int numFilas, int numColumnas) ;
+void crearDataframe(Dataframe *df, int numColumnas, int numFilas, const char *nombre_df) ;
 
 // Interfaz de línea de comandos interactiva
 void CLI() {
@@ -158,39 +161,29 @@ void CLI() {
       }
 
       sortCLI(column_name, is_descending);
-    } else if (strncmp(input, "df", 2) == 0) {
-    if (strlen(input) > 2 && isdigit(input[2])) {
-        int index = input[2] - '0';  // Convertir el número de char a int
-        Nodo *nodoActual = listaDF.primero;
-        int contador = 0;
-
-        while (nodoActual != NULL) {
-            if (contador == index) {
-                currentDF = nodoActual->df;  // Seleccionar el Dataframe activo
-                snprintf(promptTerminal, sizeof(promptTerminal), "[%s: %d,%d]:> ",
-                         currentDF->indice, currentDF->numFilas, currentDF->numColumnas);
-                printf("Dataframe activo cambiado a: %s\n", currentDF->indice);
-                return;  // Salir del bloque después de cambiar
-            }
-            nodoActual = nodoActual->siguiente;
-            contador++;
+    } else if (strncmp(input, "df", 2) == 0 && strlen(input) > 2) {
+    // Check if the next character is a digit
+    if (isdigit(input[2])) {
+        int index = input[2] - '0';
+        // Check if there are more digits for multi-digit indices
+        int i = 3;
+        while (isdigit(input[i])) {
+            index = index * 10 + (input[i] - '0');
+            i++;
         }
-
-        // Si llegamos aquí, significa que el índice no es válido
-        printf("Error: No existe el Dataframe df%d.\n", index);
+        // Validate the index
+        if (index >= 0 && index < listaDF.numDFs) {
+            cambiarDataframe(&listaDF, index);
+        } else {
+            print_error("Índice de dataframe inválido.");
+        }
     } else {
-        printf("Comando 'df' desconocido. Usa 'df0', 'df1', 'df2', etc.\n");
+        print_error("Comando inválido.");
     }
 }
-
-
-    else {
-      printf("Comando desconocido: %s\n", input);
-    }
   }
 }
 
-void cambiarDF() { printf("Hello World\n"); }
 
 void agregarDataframe(Dataframe *nuevoDF) {
   Nodo *nuevoNodo = malloc(sizeof(Nodo)); // Crear un nuevo nodo
@@ -201,119 +194,206 @@ void agregarDataframe(Dataframe *nuevoDF) {
   nuevoNodo->df = nuevoDF;                // Asignar el dataframe al nodo
   nuevoNodo->siguiente = listaDF.primero; // Insertar al inicio de la lista
   listaDF.primero = nuevoNodo; // Actualizar el puntero al primer nodo
-  listaDF.numDFs++;            // Incrementar el contador de dataframes
+}
+
+void contarFilasYColumnas(const char *filename, int *numFilas, int *numColumnas) {
+    FILE *file = fopen(filename, "r");
+    if (!file) {
+        print_error("No se puede abrir el archivo");
+        return;
+    }
+
+    char *line = NULL;
+    size_t len = 0;
+    ssize_t read;
+
+    *numFilas = 0;
+    *numColumnas = 0;
+
+    while ((read = getline(&line, &len, file)) != -1) {
+        (*numFilas)++;
+        if (*numFilas == 1) {
+            *numColumnas = contarColumnas(line);
+            if (*numColumnas > MAX_COLUMNS) {
+                print_error("Número de columnas excede el límite máximo");
+                free(line);
+                fclose(file);
+                return;
+            }
+        }
+    }
+
+    free(line);
+    fclose(file);
+}
+
+void leerEncabezados(FILE *file, Dataframe *df, int numColumnas) {
+    char *line = NULL;
+    size_t len = 0;
+    ssize_t read;
+
+    if ((read = getline(&line, &len, file)) != -1) {
+        char *token = strtok(line, ",\n\r");
+        int col = 0;
+        while (token && col < numColumnas) {
+            strncpy(df->columnas[col].nombre, token, sizeof(df->columnas[col].nombre) - 1);
+            df->columnas[col].nombre[sizeof(df->columnas[col].nombre) - 1] = '\0';
+            token = strtok(NULL, ",\n\r");
+            col++;
+        }
+    }
+
+    free(line);
+}
+
+void leerFilas(FILE *file, Dataframe *df, int numFilas, int numColumnas) {
+    char *line = NULL;
+    size_t len = 0;
+    ssize_t read;
+    int fila_actual = 0;
+
+    while ((read = getline(&line, &len, file)) != -1 && fila_actual < numFilas) {
+        verificarNulos(line, fila_actual, df);
+
+        char *token = strtok(line, ",\n\r");
+        int col = 0;
+        while (token && col < numColumnas) {
+            if (!df->columnas[col].esNulo[fila_actual]) {
+                df->columnas[col].datos[fila_actual] = strdup(token);
+            }
+            token = strtok(NULL, ",\n\r");
+            col++;
+        }
+        fila_actual++;
+    }
+
+    free(line);
+}
+
+void crearDataframe(Dataframe *df, int numColumnas, int numFilas, const char *nombre_df) {
+    if (!df || numColumnas <= 0 || numFilas <= 0 || !nombre_df) {
+        print_error("Invalid parameters in crearDataframe");
+        return;
+    }
+
+    // Check maximum limits
+    if (numColumnas > MAX_COLUMNS) {
+        print_error("Number of columns exceeds maximum limit");
+        return;
+    }
+
+    // Allocate memory for columns with verification
+    df->columnas = calloc(numColumnas, sizeof(Columna));
+    if (!df->columnas) {
+        print_error("Memory allocation failed for columns");
+        return;
+    }
+
+    df->numColumnas = numColumnas;
+    df->numFilas = numFilas;
+    strncpy(df->indice, nombre_df, sizeof(df->indice) - 1);
+    df->indice[sizeof(df->indice) - 1] = '\0';
+
+    // Initialize each column
+    for (int i = 0; i < numColumnas; i++) {
+        // Use calloc to initialize to zero
+        df->columnas[i].datos = calloc(numFilas, sizeof(char *));
+        df->columnas[i].esNulo = calloc(numFilas, sizeof(int));
+
+        if (!df->columnas[i].datos || !df->columnas[i].esNulo) {
+            // If allocation fails, free previously allocated memory
+            for (int j = 0; j < i; j++) {
+                free(df->columnas[j].datos);
+                free(df->columnas[j].esNulo);
+            }
+            free(df->columnas);
+            print_error("Memory allocation failed for column data");
+            return;
+        }
+
+        df->columnas[i].numFilas = numFilas;
+    }
+}
+
+void cargarCSV(const char *filename) {
+    int numFilas = 0;
+    int numColumnas = 0;
+
+    contarFilasYColumnas(filename, &numFilas, &numColumnas);
+
+    if (numFilas == 0 || numColumnas == 0) {
+        print_error("Archivo vacío o inválido");
+        return;
+    }
+
+    FILE *file = fopen(filename, "r");
+    if (!file) {
+        print_error("No se puede abrir el archivo");
+        return;
+    }
+
+    char nombre_df[10];
+    snprintf(nombre_df, sizeof(nombre_df), "df%d", listaDF.numDFs);
+    listaDF.numDFs++;
+
+    if (currentDF) {
+        liberarMemoriaDF(currentDF);
+        currentDF = NULL;
+    }
+
+    currentDF = malloc(sizeof(Dataframe));
+    if (!currentDF) {
+        print_error("Fallo en asignación de memoria para df");
+        fclose(file);
+        return;
+    }
+
+    crearDataframe(currentDF, numColumnas, numFilas, nombre_df);
+
+    leerEncabezados(file, currentDF, numColumnas);
+
+    leerFilas(file, currentDF, numFilas, numColumnas);
+
+    fclose(file);
+
+    agregarDataframe(currentDF);
+
+    tiposColumnas(currentDF);
+
+    snprintf(promptTerminal, sizeof(promptTerminal), "[%s: %d,%d]:> ",
+             currentDF->indice, currentDF->numFilas, currentDF->numColumnas);
+
+    printf(GREEN "Cargado exitosamente %s con %d filas y %d columnas\n" RESET,
+           filename, currentDF->numFilas, currentDF->numColumnas);
 }
 
 // Eliminamos la función cortarEspacios ya que no la necesitaremos
-void cargarCSV(const char *filename) {
-  FILE *file = fopen(filename, "r");
-  if (!file) {
-    print_error("No se puede abrir el archivo");
-    return;
-  }
 
-  // Primera pasada: Contar filas y columnas de manera segura
-  char *line = NULL;
-  size_t len = 0;
-  ssize_t read;
-  int numFilas = 0, numColumnas = 0;
-
-  // Usar getline para manejar líneas de cualquier longitud
-  while ((read = getline(&line, &len, file)) != -1) {
-    numFilas++;
-    if (numFilas == 1) {
-      numColumnas = contarColumnas(line);
-      if (numColumnas > MAX_COLUMNS) {
-        print_error("Número de columnas excede el límite máximo");
-        free(line);
-        fclose(file);
+void cambiarDataframe(Lista *lista, int index) {
+    if (index < 0 || index >= lista->numDFs) {
+        print_error("Índice de dataframe inválido.");
         return;
-      }
     }
-  }
-
-  // Verificar si se encontraron datos
-  if (numFilas == 0 || numColumnas == 0) {
-    print_error("Archivo vacío o inválido");
-    free(line);
-    fclose(file);
-    return;
-  }
-
-  // Reiniciar archivo y buffer
-  rewind(file);
-  free(line);
-  line = NULL;
-  len = 0;
-
-  char nombre_df[10];
-  snprintf(nombre_df, sizeof(nombre_df), "df%d", listaDF.numDFs);
-  listaDF.numDFs++;
-
-  // Liberar df existente si hay uno
-  if (currentDF) {
-    liberarMemoriaDF(currentDF);
-    currentDF = NULL;
-  }
-
-  // Crear nuevo df
-  currentDF = malloc(sizeof(Dataframe));
-  if (!currentDF) {
-    print_error("Fallo en asignación de memoria para df");
-    free(line);
-    fclose(file);
-    return;
-  }
-
-  crearDataframe(currentDF, numColumnas, numFilas - 1, nombre_df);
-
-  // Leer encabezados
-  if ((read = getline(&line, &len, file)) != -1) {
-    char *token = strtok(line, ",\n\r");
-    int col = 0;
-    while (token && col < numColumnas) {
-      strncpy(currentDF->columnas[col].nombre, token,
-              sizeof(currentDF->columnas[col].nombre) - 1);
-      currentDF->columnas[col]
-          .nombre[sizeof(currentDF->columnas[col].nombre) - 1] = '\0';
-      token = strtok(NULL, ",\n\r");
-      col++;
+    
+    Nodo *nodoActual = lista->primero;
+    for(int i = 0; i < index; i++) {
+        nodoActual = nodoActual->siguiente;
+        if(nodoActual == NULL) {
+            print_error("Índice de dataframe inválido.");
+            return;
+        }
     }
-  }
-
-  // Leer filas de datos
-  int fila_actual = 0;
-  while ((read = getline(&line, &len, file)) != -1 &&
-         fila_actual < numFilas - 1) {
-    verificarNulos(line, fila_actual, currentDF);
-
-    char *token = strtok(line, ",\n\r");
-    int col = 0;
-    while (token && col < numColumnas) {
-      if (!currentDF->columnas[col].esNulo[fila_actual]) {
-        currentDF->columnas[col].datos[fila_actual] = strdup(token);
-      }
-      token = strtok(NULL, ",\n\r");
-      col++;
-    }
-    fila_actual++;
-  }
-
-  // Liberar recursos
-  free(line);
-  fclose(file);
-
-  agregarDataframe(currentDF);
-
-  // Detectar tipos y actualizar prompt
-  tiposColumnas(currentDF);
-  snprintf(promptTerminal, sizeof(promptTerminal), "[%s: %d,%d]:> ",
+    
+    currentDF = nodoActual->df;  // Set currentDF to the dataframe at index
+    
+    // Update the prompt to reflect the new active dataframe
+    snprintf(promptTerminal, sizeof(promptTerminal), "[%s: %d,%d]:> ",
+             currentDF->indice, currentDF->numFilas, currentDF->numColumnas);
+    
+    printf(GREEN "Cambiado a %s con %d filas y %d columnas\n" RESET,
            currentDF->indice, currentDF->numFilas, currentDF->numColumnas);
-
-  printf(GREEN "Cargado exitosamente %s con %d filas y %d columnas\n" RESET,
-         filename, currentDF->numFilas, currentDF->numColumnas);
-  // Después de cargar el dataframe
 }
+
 
 void verificarNulos(char *linea, int fila, Dataframe *df) {
   // Eliminar espacios al final de la línea
@@ -523,51 +603,6 @@ void print_error(const char *message) {
 }
 
 // Función modificada para manejar la memoria de manera más segura
-void crearDataframe(Dataframe *currentDF, int columnas, int rows,
-                    const char *nombre) {
-  if (!currentDF || columnas <= 0 || rows <= 0 || !nombre) {
-    print_error("Parámetros inválidos en crearDataframe");
-    return;
-  }
-
-  // Verificar límites máximos
-  if (columnas > MAX_COLUMNS) {
-    print_error("Número de columnas excede el límite máximo");
-    return;
-  }
-
-  // Reservar memoria para columnas con verificación
-  currentDF->columnas = calloc(columnas, sizeof(Columna));
-  if (!currentDF->columnas) {
-    print_error("Fallo en asignación de memoria para columnas");
-    return;
-  }
-
-  currentDF->numColumnas = columnas;
-  currentDF->numFilas = rows;
-  strncpy(currentDF->indice, nombre, sizeof(currentDF->indice) - 1);
-  currentDF->indice[sizeof(currentDF->indice) - 1] = '\0';
-
-  // Inicializar cada columna
-  for (int i = 0; i < columnas; i++) {
-    // Usar calloc en lugar de malloc para inicializar a 0
-    currentDF->columnas[i].datos = calloc(rows, sizeof(void *));
-    currentDF->columnas[i].esNulo = calloc(rows, sizeof(int));
-
-    if (!currentDF->columnas[i].datos || !currentDF->columnas[i].esNulo) {
-      // Si falla la asignación, liberar memoria previamente asignada
-      for (int j = 0; j < i; j++) {
-        free(currentDF->columnas[j].datos);
-        free(currentDF->columnas[j].esNulo);
-      }
-      free(currentDF->columnas);
-      print_error("Fallo en asignación de memoria para datos de columna");
-      return;
-    }
-
-    currentDF->columnas[i].numFilas = rows;
-  }
-}
 
 // Liberar memoria de un currentDF
 void liberarMemoriaDF(Dataframe *df) {
