@@ -1,4 +1,3 @@
-#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -90,6 +89,9 @@ void metaCLI();
 void viewCLI(int n);
 void sortCLI(const char *nombre_col, int esta_desc);
 void saveCLI(const char *nombre_archivo);
+void filterCLI(const char *nombre_col, const char *operator,
+               const char * value);
+void delnullCLI(const char *nombre_col);
 
 // Funciones de procesamiento y validación
 void verificarNulos(char *line, int fila, Dataframe *df);
@@ -98,9 +100,7 @@ int compararValores(void *a, void *b, TipoDato tipo, int esta_desc);
 void tiposColumnas(Dataframe *df);
 
 // Funciones de filtrado y manipulación de datos
-void filterCLI(const char *nombre_col, const char *operator,
-               const char * value);
-void delnullCLI(const char *nombre_col);
+
 void liberarListaCompleta(Lista *lista);
 void procesarPorLotes(FILE *file, Dataframe *df, int tamanoLote);
 
@@ -293,6 +293,7 @@ void CLI() {
   }
 }
 
+// anade DF a listaDF primero
 void agregarDF(Dataframe *nuevoDF) {
     if (!nuevoDF) {
         print_error("Dataframe inválido");
@@ -315,7 +316,7 @@ void delnullCLI(const char *nombre_col) {
         print_error("No hay df activo o nombre de columna inválido");
         return;
     }
-    
+
     int indice_col = -1;
     for (int i = 0; i < df_actual->numColumnas; i++) {
         if (strcmp(df_actual->columnas[i].nombre, nombre_col) == 0) {
@@ -323,24 +324,26 @@ void delnullCLI(const char *nombre_col) {
             break;
         }
     }
-    
+
     if (indice_col == -1) {
         print_error("Columna no encontrada");
         return;
     }
-    
-    // Count valid rows first
-    int validRows = 0;
+
+    // Count rows with null values
+    int nullRows = 0;
     for (int i = 0; i < df_actual->numFilas; i++) {
-        if (!df_actual->columnas[indice_col].esNulo[i]) {
-            validRows++;
+        if (df_actual->columnas[indice_col].esNulo[i]) {
+            nullRows++;
         }
     }
-    
-    if (validRows == df_actual->numFilas) {
+
+    if (nullRows == 0) {
         printf(GREEN "No hay valores nulos para eliminar\n" RESET);
         return;
     }
+
+    int validRows = df_actual->numFilas - nullRows;
     
     // Create new dataframe
     Dataframe *nuevo_df = malloc(sizeof(Dataframe));
@@ -349,39 +352,36 @@ void delnullCLI(const char *nombre_col) {
         free(nuevo_df);
         return;
     }
-    
+
     // Copy column metadata
     for (int i = 0; i < df_actual->numColumnas; i++) {
         strncpy(nuevo_df->columnas[i].nombre, df_actual->columnas[i].nombre, 50);
         nuevo_df->columnas[i].tipo = df_actual->columnas[i].tipo;
     }
-    
-    // Copy valid rows
+
+    // Copy only rows where the specified column is not null
     int newRow = 0;
     for (int i = 0; i < df_actual->numFilas; i++) {
         if (!df_actual->columnas[indice_col].esNulo[i]) {
             for (int j = 0; j < df_actual->numColumnas; j++) {
-                if (df_actual->columnas[j].datos[i]) {
-                    nuevo_df->columnas[j].datos[newRow] = strdup(df_actual->columnas[j].datos[i]);
-                    nuevo_df->columnas[j].esNulo[newRow] = df_actual->columnas[j].esNulo[i];
-                }
+                nuevo_df->columnas[j].datos[newRow] = 
+                    df_actual->columnas[j].datos[i] ? strdup(df_actual->columnas[j].datos[i]) : NULL;
+                nuevo_df->columnas[j].esNulo[newRow] = df_actual->columnas[j].esNulo[i];
             }
             newRow++;
         }
     }
-    
+
     // Replace old dataframe
     liberarMemoriaDF(df_actual);
     df_actual = nuevo_df;
-    
+
     // Update prompt
     snprintf(promptTerminal, sizeof(promptTerminal), "[%s: %d,%d]:> ",
              df_actual->indice, df_actual->numFilas, df_actual->numColumnas);
              
-    printf(GREEN "Se eliminaron %d filas con valores nulos\n" RESET, 
-           df_actual->numFilas - validRows);
+    printf(GREEN "Se eliminaron %d filas con valores nulos\n" RESET, nullRows);
 }
-
 void filterCLI(const char *nombre_col, const char *operator,
                const char * value) {
   if (!df_actual) {
@@ -1029,8 +1029,6 @@ void viewCLI(int n) {
     print_error("No hay df cargado.");
     return;
   }
-
-  printf(WHITE "                    df: %s\n\n" RESET, df_actual->indice);
 
   // Mostrar encabezados
   for (int j = 0; j < df_actual->numColumnas; j++) {
