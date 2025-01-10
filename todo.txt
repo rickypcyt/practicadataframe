@@ -18,13 +18,12 @@ Comando delcolum nombre_columna elimina toda la columna indicada
 
 ########################################################
 
-
-
 Comando filtrar nombre_columna operador valor 
+eq sirve 
+gt sirve chance
+
 
 Comando quarter nombre_columna nombre_nueva_columna 
-
-Comparar valores no ready aun 
 
 
 Chill
