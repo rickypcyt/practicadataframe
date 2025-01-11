@@ -1,23 +1,23 @@
 #include "lib.h"
 
 // Definición de las variables globales
-Lista listaDF = {0, NULL};               // Definición de la variable global
-Dataframe *df_actual = NULL;             // Definición de la variable global
-char promptTerminal[MAX_LINE_LENGTH] = "[?]:> "; // Definición de la variable global
-
+Lista listaDF = {0, NULL};    // Definición de la variable global
+Dataframe *df_actual = NULL;  // Definición de la variable global
+char promptTerminal[MAX_LINE_LENGTH] =
+    "[?]:> ";  // Definición de la variable global
 
 // Función para procesar un archivo por lotes y cargar los datos en un DataFrame
 void procesarPorLotes(FILE *archivo, Dataframe *df, int tamanoLote) {
-  char *linea = NULL;         // Buffer para almacenar cada línea leída
-  size_t len = 0;             // Longitud de la línea
-  int filaActual = 0;         // Contador de filas procesadas
-  int capacidad = tamanoLote; // Capacidad inicial del DataFrame
+  char *linea = NULL;          // Buffer para almacenar cada línea leída
+  size_t len = 0;              // Longitud de la línea
+  int filaActual = 0;          // Contador de filas procesadas
+  int capacidad = tamanoLote;  // Capacidad inicial del DataFrame
 
   // Leer el archivo línea por línea
   while (getline(&linea, &len, archivo) != -1) {
     // Verificar si se necesita aumentar la capacidad
     if (filaActual >= capacidad) {
-      capacidad += tamanoLote; // Aumentar la capacidad
+      capacidad += tamanoLote;  // Aumentar la capacidad
 
       // Expandir la memoria para cada columna
       for (int i = 0; i < df->numColumnas; i++) {
@@ -47,19 +47,19 @@ void procesarPorLotes(FILE *archivo, Dataframe *df, int tamanoLote) {
 
     // Verificar y marcar valores nulos en la línea actual
     verificarNulos(linea, filaActual, df);
-    char *token = strtok(linea, ",\n\r"); // Dividir la línea en tokens
-    int col = 0;                          // Contador de columnas
+    char *token = strtok(linea, ",\n\r");  // Dividir la línea en tokens
+    int col = 0;                           // Contador de columnas
 
     // Procesar cada token y almacenarlo en el DataFrame
     while (token && col < df->numColumnas) {
       if (!df->columnas[col].esNulo[filaActual]) {
         df->columnas[col].datos[filaActual] =
-            strdup(token); // Duplicar el token
+            strdup(token);  // Duplicar el token
       }
-      token = strtok(NULL, ",\n\r"); // Obtener el siguiente token
+      token = strtok(NULL, ",\n\r");  // Obtener el siguiente token
       col++;
     }
-    filaActual++; // Incrementar el contador de filas
+    filaActual++;  // Incrementar el contador de filas
   }
 
   // Establecer el número actual de filas en el DataFrame
@@ -73,23 +73,23 @@ void procesarPorLotes(FILE *archivo, Dataframe *df, int tamanoLote) {
         realloc(df->columnas[i].esNulo, filaActual * sizeof(int));
   }
 
-  free(linea); // Liberar la memoria del buffer de línea
+  free(linea);  // Liberar la memoria del buffer de línea
 }
 
 // Función para liberar toda la memoria de una lista de DataFrames
 void liberarListaCompleta(Lista *lista) {
-  Nodo *actual = lista->primero; // Nodo actual en la lista
+  Nodo *actual = lista->primero;  // Nodo actual en la lista
 
   // Recorrer la lista y liberar cada nodo
 
   while (actual) {
-    Nodo *siguiente = actual->siguiente; // Guardar el siguiente nodo
+    Nodo *siguiente = actual->siguiente;  // Guardar el siguiente nodo
 
-    liberarMemoriaDF(actual->df); // Liberar la memoria del DataFrame
+    liberarMemoriaDF(actual->df);  // Liberar la memoria del DataFrame
 
-    free(actual); // Liberar el nodo actual
+    free(actual);  // Liberar el nodo actual
 
-    actual = siguiente; // Avanzar al siguiente nodo
+    actual = siguiente;  // Avanzar al siguiente nodo
   }
 
   // Reiniciar la lista
@@ -101,60 +101,49 @@ void liberarListaCompleta(Lista *lista) {
 
 // Función auxiliar para comparar valores según el operador
 int comparar(void *dato1, void *dato2, TipoDato tipo, const char *operador) {
-  if (!dato1 || !dato2)
-    return 0;
+  if (!dato1 || !dato2) return 0;
 
   // Convertir los datos según el tipo
   switch (tipo) {
-case NUMERICO: {
-    int val1 = atoi((char *)dato1);  // Usar atoi para enteros
-    int val2 = atoi((char *)dato2);  // Usar atoi para enteros
+    case NUMERICO: {
+      int val1 = atoi((char *)dato1);  // Usar atoi para enteros
+      int val2 = atoi((char *)dato2);  // Usar atoi para enteros
 
-    if (strcmp(operador, "eq") == 0)
-      return val1 == val2;
-    if (strcmp(operador, "neq") == 0)
-      return val1 != val2;
-    if (strcmp(operador, "gt") == 0)
-      return val1 > val2;
-    if (strcmp(operador, "lt") == 0)
-      return val1 < val2;
-    break;
-}
-  case FECHA: {
-    struct tm tm1 = {0}, tm2 = {0};
-    sscanf((char *)dato1, "%d-%d-%d", &tm1.tm_year, &tm1.tm_mon, &tm1.tm_mday);
-    sscanf((char *)dato2, "%d-%d-%d", &tm2.tm_year, &tm2.tm_mon, &tm2.tm_mday);
+      if (strcmp(operador, "eq") == 0) return val1 == val2;
+      if (strcmp(operador, "neq") == 0) return val1 != val2;
+      if (strcmp(operador, "gt") == 0) return val1 > val2;
+      if (strcmp(operador, "lt") == 0) return val1 < val2;
+      break;
+    }
+    case FECHA: {
+      struct tm tm1 = {0}, tm2 = {0};
+      sscanf((char *)dato1, "%d-%d-%d", &tm1.tm_year, &tm1.tm_mon,
+             &tm1.tm_mday);
+      sscanf((char *)dato2, "%d-%d-%d", &tm2.tm_year, &tm2.tm_mon,
+             &tm2.tm_mday);
 
-    tm1.tm_year -= 1900;
-    tm2.tm_year -= 1900;
-    tm1.tm_mon -= 1;
-    tm2.tm_mon -= 1;
+      tm1.tm_year -= 1900;
+      tm2.tm_year -= 1900;
+      tm1.tm_mon -= 1;
+      tm2.tm_mon -= 1;
 
-    time_t time1 = mktime(&tm1);
-    time_t time2 = mktime(&tm2);
+      time_t time1 = mktime(&tm1);
+      time_t time2 = mktime(&tm2);
 
-    if (strcmp(operador, "eq") == 0)
-      return time1 == time2;
-    if (strcmp(operador, "neq") == 0)
-      return time1 != time2;
-    if (strcmp(operador, "gt") == 0)
-      return time1 > time2;
-    if (strcmp(operador, "lt") == 0)
-      return time1 < time2;
-    break;
-  }
-  case TEXTO: {
-    int comp = strcmp((char *)dato1, (char *)dato2);
-    if (strcmp(operador, "eq") == 0)
-      return comp == 0;
-    if (strcmp(operador, "neq") == 0)
-      return comp != 0;
-    if (strcmp(operador, "gt") == 0)
-      return comp > 0;
-    if (strcmp(operador, "lt") == 0)
-      return comp < 0;
-    break;
-  }
+      if (strcmp(operador, "eq") == 0) return time1 == time2;
+      if (strcmp(operador, "neq") == 0) return time1 != time2;
+      if (strcmp(operador, "gt") == 0) return time1 > time2;
+      if (strcmp(operador, "lt") == 0) return time1 < time2;
+      break;
+    }
+    case TEXTO: {
+      int comp = strcmp((char *)dato1, (char *)dato2);
+      if (strcmp(operador, "eq") == 0) return comp == 0;
+      if (strcmp(operador, "neq") == 0) return comp != 0;
+      if (strcmp(operador, "gt") == 0) return comp > 0;
+      if (strcmp(operador, "lt") == 0) return comp < 0;
+      break;
+    }
   }
   return 0;
 }
@@ -241,7 +230,7 @@ void filterCLI(Dataframe *df, const char *nombre_columna, const char *operador,
 // Función para liberar la memoria de un DataFrame
 void liberarMemoriaDF(Dataframe *df) {
   if (!df) {
-    return; // Si el DataFrame es NULL, no hacer nada
+    return;  // Si el DataFrame es NULL, no hacer nada
   }
 
   // Liberar memoria de las columnas
@@ -255,16 +244,16 @@ void liberarMemoriaDF(Dataframe *df) {
           free(df->columnas[i].datos[j]);
         }
 
-        free(df->columnas[i].datos); // Liberar el arreglo de datos
+        free(df->columnas[i].datos);  // Liberar el arreglo de datos
       }
 
-      free(df->columnas[i].esNulo); // Liberar el arreglo de nulidad
+      free(df->columnas[i].esNulo);  // Liberar el arreglo de nulidad
     }
 
-    free(df->columnas); // Liberar el arreglo de columnas
+    free(df->columnas);  // Liberar el arreglo de columnas
   }
 
-  free(df); // Liberar el DataFrame
+  free(df);  // Liberar el DataFrame
 }
 
 void CLI() {
@@ -275,7 +264,7 @@ void CLI() {
     printf("%s", promptTerminal);
     fgets(input, sizeof(input), stdin);
     cortarEspacios(
-        input); // Eliminar espacios en blanco al inicio y final del input
+        input);  // Eliminar espacios en blanco al inicio y final del input
 
     // Comando "quit": salir del CLI
     if (strcmp(input, "quit") == 0) {
@@ -284,7 +273,7 @@ void CLI() {
 
     // Comando "load": cargar un archivo CSV
     else if (strncmp(input, "load ", 5) == 0) {
-      loadearCSV(input + 5); // Cargar el CSV especificado después de "load"
+      loadearCSV(input + 5);  // Cargar el CSV especificado después de "load"
     }
 
     // Comando "meta": mostrar metadatos
@@ -294,12 +283,12 @@ void CLI() {
 
     // Comando "save": guardar datos
     else if (strncmp(input, "save", 4) == 0) {
-      saveCLI(input + 4); // Pasar argumentos después de "save"
+      saveCLI(input + 4);  // Pasar argumentos después de "save"
     }
 
     // Comando "view": mostrar filas de datos
     else if (strncmp(input, "view", 4) == 0) {
-      int n = 10; // Por defecto, mostrar 10 filas
+      int n = 10;  // Por defecto, mostrar 10 filas
 
       // Verificar si el usuario especificó un número de filas
       if (strlen(input) > 4) {
@@ -318,7 +307,7 @@ void CLI() {
     // Comando "sort": ordenar los datos
     else if (strncmp(input, "sort ", 5) == 0) {
       char nombre_col[50];
-      char order[10] = "asc"; // Orden ascendente por defecto
+      char order[10] = "asc";  // Orden ascendente por defecto
       int esta_desc = 0;
 
       // Parsear el nombre de la columna y el orden
@@ -344,14 +333,14 @@ void CLI() {
 
     // Comando "delnull": eliminar valores nulos
     else if (strncmp(input, "delnull ", 8) == 0) {
-      delnullCLI(input + 8); // Pasar argumentos después de "delnull"
+      delnullCLI(input + 8);  // Pasar argumentos después de "delnull"
     } else if (strncmp(input, "delcolum ", 9) ==
-               0) { // Compara 9 caracteres para incluir "delcolum "
+               0) {  // Compara 9 caracteres para incluir "delcolum "
       const char *nombre_columna =
-          input + 9; // Saltar "delcolum " (9 caracteres)
+          input + 9;  // Saltar "delcolum " (9 caracteres)
       while (*nombre_columna == ' ')
-        nombre_columna++;          // Ignorar espacios adicionales
-      delcolumCLI(nombre_columna); // Llamar a la función con el nombre limpio
+        nombre_columna++;           // Ignorar espacios adicionales
+      delcolumCLI(nombre_columna);  // Llamar a la función con el nombre limpio
     }
 
     // Comando "df": cambiar de dataframe
@@ -400,24 +389,24 @@ void CLI() {
       // Convertir el valor según el tipo de la columna
       void *valor_convertido = NULL;
       switch (df_actual->columnas[col_idx].tipo) {
-      case NUMERICO: {
-        double *num_val = malloc(sizeof(double));
-        if (!num_val) {
-          print_error("Error de memoria");
-          continue;
+        case NUMERICO: {
+          double *num_val = malloc(sizeof(double));
+          if (!num_val) {
+            print_error("Error de memoria");
+            continue;
+          }
+          *num_val = atof(valor);
+          valor_convertido = num_val;
+          break;
         }
-        *num_val = atof(valor);
-        valor_convertido = num_val;
-        break;
-      }
-      case FECHA:
-      case TEXTO:
-        valor_convertido = strdup(valor);
-        if (!valor_convertido) {
-          print_error("Error de memoria");
-          continue;
-        }
-        break;
+        case FECHA:
+        case TEXTO:
+          valor_convertido = strdup(valor);
+          if (!valor_convertido) {
+            print_error("Error de memoria");
+            continue;
+          }
+          break;
       }
 
       // Llamar a filterCLI
@@ -435,7 +424,7 @@ void agregarDF(Dataframe *nuevoDF) {
     print_error("Dataframe inválido");
     return;
   }
-  
+
   Nodo *nuevoNodo = malloc(sizeof(Nodo));
   if (!nuevoNodo) {
     print_error("Fallo en asignación de memoria para nodo");
@@ -459,7 +448,7 @@ void delcolumCLI(const char *nombre_col) {
   nombre_col_limpio[50] = '\0';
   for (int i = 0; nombre_col_limpio[i]; i++) {
     nombre_col_limpio[i] =
-        tolower(nombre_col_limpio[i]); // Convertir a minúsculas
+        tolower(nombre_col_limpio[i]);  // Convertir a minúsculas
   }
 
   // Buscar la columna en el dataframe
@@ -471,7 +460,7 @@ void delcolumCLI(const char *nombre_col) {
     nombre_actual_limpio[50] = '\0';
     for (int j = 0; nombre_actual_limpio[j]; j++) {
       nombre_actual_limpio[j] =
-          tolower(nombre_actual_limpio[j]); // Convertir a minúsculas
+          tolower(nombre_actual_limpio[j]);  // Convertir a minúsculas
     }
 
     // Comparar los nombres limpios
@@ -506,8 +495,7 @@ void delcolumCLI(const char *nombre_col) {
   // Copiar las columnas excepto la eliminada
   int nuevaColIndex = 0;
   for (int i = 0; i < df_actual->numColumnas; i++) {
-    if (i == indice_col)
-      continue; // Saltar la columna a eliminar
+    if (i == indice_col) continue;  // Saltar la columna a eliminar
 
     strncpy(nuevo_df->columnas[nuevaColIndex].nombre,
             df_actual->columnas[i].nombre, 50);
@@ -849,34 +837,34 @@ void loadearCSV(const char *nombre_archivo) {
 }
 
 void cortarEspacios(char *str) {
-  size_t len = strlen(str);
-  if (len > 0 && str[len - 1] == '\n') {
-    str[len - 1] = '\0'; // Elimina el salto de línea al final
+  size_t longitud = strlen(str);
+  if (longitud > 0 && str[longitud - 1] == '\n') {
+    str[longitud - 1] = '\0';  // Elimina el salto de línea al final
   }
 
   // Eliminar espacios en blanco al inicio de la cadena
-  char *start = str;
-  while (*start == ' ') {
-    start++;
+  char *inicio = str;
+  while (*inicio == ' ') {
+    inicio++;
   }
 
   // Mover la cadena procesada al inicio
-  if (start != str) {
-    memmove(str, start, strlen(start) + 1);
+  if (inicio != str) {
+    memmove(str, inicio, strlen(inicio) + 1);
   }
 
   // Eliminar espacios en blanco al final
-  len = strlen(str);
-  while (len > 0 && str[len - 1] == ' ') {
-    str[--len] = '\0';
+  longitud = strlen(str);
+  while (longitud > 0 && str[longitud - 1] == ' ') {
+    str[--longitud] = '\0';
   }
 }
+
 
 int contarColumnas(const char *line) {
   int count = 1;
   for (int i = 0; line[i]; i++) {
-    if (line[i] == ',')
-      count++;
+    if (line[i] == ',') count++;
   }
   return count;
 }
@@ -891,40 +879,39 @@ int fechaValida(const char *str_fecha) {
     return 0;
   }
 
-  tm.tm_year -= 1900; // Ajustar año desde 1900
-  tm.tm_mon -= 1;     // Ajustar mes (0-11)
+  tm.tm_year -= 1900;  // Ajustar año desde 1900
+  tm.tm_mon -= 1;      // Ajustar mes (0-11)
   time_t t = mktime(&tm);
   return t != -1;
 }
 
 void tiposColumnas(Dataframe *df) {
   for (int col = 0; col < df->numColumnas; col++) {
-    df->columnas[col].tipo = TEXTO; // Tipo por defecto
-    int is_numeric = 1;
-    int is_date = 1;
+    df->columnas[col].tipo = TEXTO;  // Tipo por defecto
+    int es_numerica = 1;
+    int es_fecha = 1;
 
     for (int row = 0; row < df->numFilas; row++) {
       char *value = (char *)df->columnas[col].datos[row];
-      if (value == NULL)
-        continue;
+      if (value == NULL) continue;
 
       // Verificar si es numérico
       char *endptr;
       strtod(value, &endptr);
       if (endptr == value) {
-        is_numeric = 0;
+        es_numerica = 0;
       }
 
       // Verificar si es fecha
       if (!fechaValida(value)) {
-        is_date = 0;
+        es_fecha = 0;
       }
     }
 
     // Establecer tipo con prioridad: Fecha > Numérico > Texto
-    if (is_date) {
+    if (es_fecha) {
       df->columnas[col].tipo = FECHA;
-    } else if (is_numeric) {
+    } else if (es_numerica) {
       df->columnas[col].tipo = NUMERICO;
     }
   }
@@ -932,46 +919,43 @@ void tiposColumnas(Dataframe *df) {
 
 int compararValores(void *a, void *b, TipoDato tipo, int esta_desc) {
   // Manejar casos de valores nulos
-  if (a == NULL && b == NULL)
-    return 0;
-  if (a == NULL)
-    return esta_desc ? 1 : -1;
-  if (b == NULL)
-    return esta_desc ? -1 : 1;
+  if (a == NULL && b == NULL) return 0;
+  if (a == NULL) return esta_desc ? 1 : -1;
+  if (b == NULL) return esta_desc ? -1 : 1;
 
   char *str_a = (char *)a;
   char *str_b = (char *)b;
 
   switch (tipo) {
-    // Comparación de valores numéricos
-  case NUMERICO: {
-    double num_a = atof(str_a);
-    double num_b = atof(str_b);
-    return esta_desc ? (num_a < num_b ? 1 : (num_a > num_b ? -1 : 0))
-                     : (num_a < num_b ? -1 : (num_a > num_b ? 1 : 0));
-  }
-  // Comparación de fechas
-  case FECHA: {
-    struct tm tm_a = {0}, tm_b = {0};
-    sscanf(str_a, "%4d-%2d-%2d", &tm_a.tm_year, &tm_a.tm_mon, &tm_a.tm_mday);
-    sscanf(str_b, "%4d-%2d-%2d", &tm_b.tm_year, &tm_b.tm_mon, &tm_b.tm_mday);
-    tm_a.tm_year -= 1900;
-    tm_b.tm_year -= 1900;
-    tm_a.tm_mon -= 1;
-    tm_b.tm_mon -= 1;
+      // Comparación de valores numéricos
+    case NUMERICO: {
+      double num_a = atof(str_a);
+      double num_b = atof(str_b);
+      return esta_desc ? (num_a < num_b ? 1 : (num_a > num_b ? -1 : 0))
+                       : (num_a < num_b ? -1 : (num_a > num_b ? 1 : 0));
+    }
+    // Comparación de fechas
+    case FECHA: {
+      struct tm tm_a = {0}, tm_b = {0};
+      sscanf(str_a, "%4d-%2d-%2d", &tm_a.tm_year, &tm_a.tm_mon, &tm_a.tm_mday);
+      sscanf(str_b, "%4d-%2d-%2d", &tm_b.tm_year, &tm_b.tm_mon, &tm_b.tm_mday);
+      tm_a.tm_year -= 1900;
+      tm_b.tm_year -= 1900;
+      tm_a.tm_mon -= 1;
+      tm_b.tm_mon -= 1;
 
-    time_t time_a = mktime(&tm_a);
-    time_t time_b = mktime(&tm_b);
+      time_t time_a = mktime(&tm_a);
+      time_t time_b = mktime(&tm_b);
 
-    return esta_desc ? (time_a < time_b ? 1 : (time_a > time_b ? -1 : 0))
-                     : (time_a < time_b ? -1 : (time_a > time_b ? 1 : 0));
-  }
-  // Comparación de cadenas de texto
-  case TEXTO: {
-    return esta_desc ? strcmp(str_b, str_a) : strcmp(str_a, str_b);
-  }
-  default:
-    return 0;
+      return esta_desc ? (time_a < time_b ? 1 : (time_a > time_b ? -1 : 0))
+                       : (time_a < time_b ? -1 : (time_a > time_b ? 1 : 0));
+    }
+    // Comparación de cadenas de texto
+    case TEXTO: {
+      return esta_desc ? strcmp(str_b, str_a) : strcmp(str_a, str_b);
+    }
+    default:
+      return 0;
   }
 }
 
@@ -985,16 +969,16 @@ void inicializarLista() {
   listaDF.primero = NULL;
 }
 
-void cambiarDF(Lista *lista, int index) {
-  if (index < 0 || index >= lista->numDFs) {
+void cambiarDF(Lista *lista, int indice) {
+  if (indice < 0 || indice >= lista->numDFs) {
     print_error("Índice de dataframe inválido.");
     return;
   }
 
-  int reverseIndex = lista->numDFs - 1 - index; // Reverse the index
+  int indiceInverso = lista->numDFs - 1 - indice;  // Invertir el índice
   Nodo *nodoActual = lista->primero;
 
-  for (int i = 0; i < reverseIndex; i++) {
+  for (int i = 0; i < indiceInverso; i++) {
     if (nodoActual == NULL) {
       print_error("Dataframe no encontrado.");
       return;
@@ -1015,13 +999,14 @@ void cambiarDF(Lista *lista, int index) {
          nodoActual->df->numColumnas);
 }
 
+
 void saveCLI(const char *nombre_archivo) {
   if (!df_actual) {
     print_error("No hay df activo para guardar.");
     return;
   }
 
-  // If no nombre_archivo was provided, create a default one
+  // Si no se proporcionó un nombre de archivo, se crea uno por defecto
   char nombre_saveCLI[MAX_FILENAME];
   if (nombre_archivo == NULL || strlen(nombre_archivo) == 0) {
     snprintf(nombre_saveCLI, sizeof(nombre_saveCLI), "%s.csv",
@@ -1032,7 +1017,7 @@ void saveCLI(const char *nombre_archivo) {
     cortarEspacios(nombre_saveCLI);
   }
 
-  // Add .csv extension if not present
+  // Agregar la extensión .csv si no está presente
   if (strlen(nombre_saveCLI) < 4 ||
       strcmp(nombre_saveCLI + strlen(nombre_saveCLI) - 4, ".csv") != 0) {
     strncat(nombre_saveCLI, ".csv",
@@ -1048,7 +1033,7 @@ void saveCLI(const char *nombre_archivo) {
     return;
   }
 
-  // Write headers
+  // Escribir los encabezados
   for (int col = 0; col < df_actual->numColumnas; col++) {
     fprintf(file, "%s", df_actual->columnas[col].nombre);
     if (col < df_actual->numColumnas - 1) {
@@ -1057,23 +1042,23 @@ void saveCLI(const char *nombre_archivo) {
   }
   fprintf(file, "\n");
 
-  // Write data
+  // Escribir los datos
   for (int row = 0; row < df_actual->numFilas; row++) {
     for (int col = 0; col < df_actual->numColumnas; col++) {
       if (df_actual->columnas[col].esNulo[row]) {
-        // Write nothing for null values
+        // No escribir nada para valores nulos
       } else if (df_actual->columnas[col].datos[row] != NULL) {
         char *valor = (char *)df_actual->columnas[col].datos[row];
-        // Check if value needs quoting
-        int needs_quotes =
+        // Verificar si el valor necesita comillas
+        int contiene_comas =
             (strchr(valor, ',') != NULL || strchr(valor, '"') != NULL);
 
-        if (needs_quotes) {
+        if (contiene_comas) {
           fprintf(file, "\"");
           for (char *c = valor; *c; c++) {
             if (*c == '"') {
               fprintf(file,
-                      "\"\""); // Double quotes for escaping
+                      "\"\"");  // Comillas dobles para escaparlas
             } else {
               fprintf(file, "%c", *c);
             }
@@ -1095,6 +1080,7 @@ void saveCLI(const char *nombre_archivo) {
   printf(GREEN "df guardado exitosamente en %s\n" RESET, nombre_saveCLI);
 }
 
+
 void metaCLI() {
   if (!df_actual) {
     print_error("No hay df cargado.");
@@ -1102,32 +1088,32 @@ void metaCLI() {
   }
 
   for (int col = 0; col < df_actual->numColumnas; col++) {
-    int null_count = 0;
+    int contador_nulos = 0;
 
     for (int row = 0; row < df_actual->numFilas; row++) {
       if (df_actual->columnas[col].esNulo[row]) {
-        null_count++;
+        contador_nulos++;
       }
     }
 
-    char *type_str;
+    char *tipo;
     switch (df_actual->columnas[col].tipo) {
-    case TEXTO:
-      type_str = "Texto";
-      break;
-    case NUMERICO:
-      type_str = "Numérico";
-      break;
-    case FECHA:
-      type_str = "Fecha";
-      break;
-    default:
-      type_str = "Desconocido";
-      break;
+      case TEXTO:
+        tipo = "Texto";
+        break;
+      case NUMERICO:
+        tipo = "Numérico";
+        break;
+      case FECHA:
+        tipo = "Fecha";
+        break;
+      default:
+        tipo = "Desconocido";
+        break;
     }
 
     printf(GREEN "%s: %s (Valores nulos: %d)\n" RESET,
-           df_actual->columnas[col].nombre, type_str, null_count);
+           df_actual->columnas[col].nombre, tipo, contador_nulos);
   }
 }
 
@@ -1144,11 +1130,11 @@ void viewCLI(int n) {
     printf("%s", df_actual->columnas[j].nombre);
 
     if (j < df_actual->numColumnas - 1) {
-      printf(","); // Agregar coma entre encabezados
+      printf(",");  // Agregar coma entre encabezados
     }
   }
 
-  printf("\n"); // Nueva línea después de los encabezados
+  printf("\n");  // Nueva línea después de los encabezados
 
   // Determinar el número de filas a mostrar
 
@@ -1161,17 +1147,17 @@ void viewCLI(int n) {
       // Verificar si el valor es nulo
 
       if (df_actual->columnas[j].esNulo[i]) {
-        printf("1"); // Marcar como nulo
+        printf("1");  // Marcar como nulo
 
       } else {
         // Verificar si el dato es NULL
 
         if (df_actual->columnas[j].datos[i] == NULL) {
-          printf(""); // No imprimir nada si es NULL
+          printf("");  // No imprimir nada si es NULL
 
         } else {
           printf("%s",
-                 (char *)df_actual->columnas[j].datos[i]); // Imprimir el dato
+                 (char *)df_actual->columnas[j].datos[i]);  // Imprimir el dato
         }
       }
 
@@ -1182,7 +1168,7 @@ void viewCLI(int n) {
       }
     }
 
-    printf("\n"); // Nueva línea después de cada fila
+    printf("\n");  // Nueva línea después de cada fila
   }
 }
 
@@ -1190,10 +1176,10 @@ void viewCLI(int n) {
 int encontrarIndiceColumna(Dataframe *df, const char *nombre_columna) {
   for (int i = 0; i < df->numColumnas; i++) {
     if (strcmp(df->columnas[i].nombre, nombre_columna) == 0) {
-      return i; // Retorna el índice si se encuentra
+      return i;  // Retorna el índice si se encuentra
     }
   }
-  return -1; // Retorna -1 si no se encuentra
+  return -1;  // Retorna -1 si no se encuentra
 }
 
 // Función para intercambiar datos y banderas de nulidad entre dos filas para
@@ -1257,15 +1243,15 @@ void verificarNulos(char *linea, int fila, Dataframe *df) {
   cortarEspacios(linea);
 
   char resultado[MAX_LINE_LENGTH * 2] = {
-      0}; // Buffer para almacenar la línea procesada
+      0};  // Buffer para almacenar la línea procesada
 
-  int j = 0; // Índice para el buffer de resultado
+  int j = 0;  // Índice para el buffer de resultado
 
-  int longitud = strlen(linea); // Longitud de la línea original
+  int longitud = strlen(linea);  // Longitud de la línea original
 
-  int esperando_valor = 1; // Bandera para indicar si se espera un valor
+  int esperando_valor = 1;  // Bandera para indicar si se espera un valor
 
-  int indice_columna = 0; // Índice de la columna actual
+  int indice_columna = 0;  // Índice de la columna actual
 
   // Iterar sobre cada carácter de la línea
 
@@ -1276,19 +1262,19 @@ void verificarNulos(char *linea, int fila, Dataframe *df) {
       // Si se esperaba un valor y no se encontró, marcar como nulo
 
       if (esperando_valor) {
-        resultado[j++] = '1'; // Marcar como nulo
+        resultado[j++] = '1';  // Marcar como nulo
 
         df->columnas[indice_columna].esNulo[fila] =
-            1; // Actualizar el DataFrame
+            1;  // Actualizar el DataFrame
       }
 
       // Si no se ha llegado al final de la línea, agregar el separador
 
       if (i < longitud) {
-        resultado[j++] = linea[i]; // Agregar el separador (',' o '\r')
+        resultado[j++] = linea[i];  // Agregar el separador (',' o '\r')
       }
 
-      esperando_valor = 1; // Reiniciar la bandera de espera
+      esperando_valor = 1;  // Reiniciar la bandera de espera
 
       // Si se ha encontrado un salto de línea, agregarlo al resultado
 
@@ -1298,17 +1284,17 @@ void verificarNulos(char *linea, int fila, Dataframe *df) {
         resultado[j++] = '\n';
       }
 
-      indice_columna++; // Pasar a la siguiente columna
+      indice_columna++;  // Pasar a la siguiente columna
 
     } else {
-      resultado[j++] = linea[i]; // Agregar el carácter actual al resultado
+      resultado[j++] = linea[i];  // Agregar el carácter actual al resultado
 
-      esperando_valor = 0; // Se ha encontrado un valor
+      esperando_valor = 0;  // Se ha encontrado un valor
     }
   }
 
-  resultado[j] = '\0'; // Terminar la cadena de resultado
+  resultado[j] = '\0';  // Terminar la cadena de resultado
 
   strcpy(linea,
-         resultado); // Copiar el resultado de vuelta a la línea original
+         resultado);  // Copiar el resultado de vuelta a la línea original
 }

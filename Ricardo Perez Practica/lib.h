@@ -22,26 +22,26 @@
 
 // Enumeración de tipos de datos soportados
 typedef enum {
-  TEXTO,    // Tipo cadena de texto
-  NUMERICO, // Tipo numérico (punto flotante)
-  FECHA     // Tipo fecha
+  TEXTO,     // Tipo cadena de texto
+  NUMERICO,  // Tipo numérico (punto flotante)
+  FECHA      // Tipo fecha
 } TipoDato;
 
 // Estructura de Columna: Representa una columna en el df
 typedef struct {
-  char nombre[50];      // Nombre de la columna
-  TipoDato tipo;        // Tipo de datos de la columna
-  char **datos;         // Arreglo de punteros a datos
-  unsigned int *esNulo; // Indicador de valores nulos
-  int numFilas;         // Número de filas en la columna
+  char nombre[50];       // Nombre de la columna
+  TipoDato tipo;         // Tipo de datos de la columna
+  char **datos;          // Arreglo de punteros a datos
+  unsigned int *esNulo;  // Indicador de valores nulos
+  int numFilas;          // Número de filas en la columna
 } Columna;
 
 // Estructura de df: Contenedor principal de datos
 typedef struct {
-  Columna *columnas; // Arreglo de columnas
-  int numColumnas;   // Número total de columnas
-  int numFilas;      // Número total de filas
-  char indice[20];   // Nombre del df
+  Columna *columnas;  // Arreglo de columnas
+  int numColumnas;    // Número total de columnas
+  int numFilas;       // Número total de filas
+  char indice[20];    // Nombre del df
 } Dataframe;
 
 // Alias para tipos FECHA: 'Fecha' alias de 'struct tm' (#include <time.h>)
@@ -49,21 +49,21 @@ typedef struct tm Fecha;
 
 // Estructura para representar un nodo de la lista
 typedef struct NodoLista {
-  Dataframe *df;               // puntero a Dataframe
-  struct NodoLista *siguiente; // Puntero al siguiente nodo de la lista
+  Dataframe *df;                // puntero a Dataframe
+  struct NodoLista *siguiente;  // Puntero al siguiente nodo de la lista
 } Nodo;
 
 // Estructura para representar la lista de Dataframe’s
 typedef struct {
-  int numDFs;    // Número de Dataframes almacenados en la lista
-  Nodo *primero; // Puntero al primer Nodo de la lista
+  int numDFs;     // Número de Dataframes almacenados en la lista
+  Nodo *primero;  // Puntero al primer Nodo de la lista
 } Lista;
 
 // Variables globales para gestión del sistema
-extern Lista listaDF;               // Declaración de la variable global
-extern Dataframe *df_actual;        // Declaración de la variable global
-extern char promptTerminal[MAX_LINE_LENGTH]; // Declaración de la variable global
-
+extern Lista listaDF;         // Declaración de la variable global
+extern Dataframe *df_actual;  // Declaración de la variable global
+extern char
+    promptTerminal[MAX_LINE_LENGTH];  // Declaración de la variable global
 
 // Prototipos de todas las funciones utilizadas
 // Funciones de inicialización y gestión
