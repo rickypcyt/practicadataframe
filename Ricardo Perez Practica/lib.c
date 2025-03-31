@@ -3,61 +3,111 @@
 #include "lib.h"
 
 Lista listaDF = {0, NULL};    
-Dataframe *df_actual = NULL;  
+Dataframe *dfActual = NULL;  
 char promptTerminal[MAX_LINE_LENGTH] = "[?]:> ";
 
+// Implementación de funciones helper
+Dataframe* crearNuevoDataframe(int numColumnas, int numFilas, const char* indice) {
+    Dataframe* df = malloc(sizeof(Dataframe));
+    if (!df || !crearDF(df, numColumnas, numFilas, indice)) {
+        free(df);
+        print_error("Error al crear nuevo dataframe");
+        return NULL;
+    }
+    return df;
+}
+
+void copiarNombreColumna(char* destino, const char* origen) {
+    strncpy(destino, origen, MAX_NOMBRE_COLUMNA - 1);
+    destino[MAX_NOMBRE_COLUMNA - 1] = '\0';
+}
+
+char* copiarDatoSeguro(const char* origen) {
+    return origen ? strdup(origen) : NULL;
+}
+
+void actualizarPrompt(const Dataframe* df) {
+    if (!df) {
+        strncpy(promptTerminal, "[?]:> ", MAX_LINE_LENGTH);
+        return;
+    }
+    snprintf(promptTerminal, MAX_LINE_LENGTH, "[%s: %d,%d]:> ",
+             df->indice, df->numFilas, df->numColumnas);
+}
+
+void liberarRecursosEnError(Dataframe* df, const char* mensaje) {
+    if (df) liberarMemoriaDF(df);
+    print_error(mensaje);
+}
+
 void procesarPorLotes(FILE *archivo, Dataframe *df, int tamanoLote) {
-  char *lineaLeida = NULL;
-  size_t len = 0;
-  int filaActual = 0;
-  int numMaxFilas = tamanoLote;
+    VALIDAR_DF_Y_PARAMETROS(df, archivo);
+    
+    char *lineaLeida = NULL;
+    size_t len = 0;
+    int filaActual = 0;
+    int numMaxFilas = tamanoLote;
 
-  while (getline(&lineaLeida, &len, archivo) != -1) {
-    if (filaActual >= numMaxFilas) {
-      numMaxFilas += tamanoLote;
+    while (getline(&lineaLeida, &len, archivo) != -1) {
+        if (filaActual >= numMaxFilas) {
+            numMaxFilas += tamanoLote;
 
-      for (int i = 0; i < df->numColumnas; i++) {
-        char **nuevos_datos = realloc(df->columnas[i].datos, numMaxFilas * sizeof(char *));
-        unsigned int *nuevos_nulos = realloc(df->columnas[i].esNulo, numMaxFilas * sizeof(unsigned int *));
+            for (int columnaActual = 0; columnaActual < df->numColumnas; columnaActual++) {
+                char **nuevos_datos = realloc(df->columnas[columnaActual].datos, 
+                                            numMaxFilas * sizeof(char *));
+                EstadoNulo *nuevos_nulos = realloc(df->columnas[columnaActual].esNulo, 
+                                                  numMaxFilas * sizeof(EstadoNulo));
 
+                if (!nuevos_datos || !nuevos_nulos) {
+                    liberarRecursosEnError(df, "Error al expandir memoria");
+                    free(lineaLeida);
+                    return;
+                }
+
+                df->columnas[columnaActual].datos = nuevos_datos;
+                df->columnas[columnaActual].esNulo = nuevos_nulos;
+
+                for (int j = filaActual; j < numMaxFilas; j++) {
+                    df->columnas[columnaActual].datos[j] = NULL;
+                    df->columnas[columnaActual].esNulo[j] = NO_NULO;
+                }
+            }
+        }
+
+        verificarNulos(lineaLeida, filaActual, df);
+        char *token = strtok(lineaLeida, ",\n\r");
+        int columnaActual = 0;
+
+        while (token && columnaActual < df->numColumnas) {
+            if (!df->columnas[columnaActual].esNulo[filaActual]) {
+                df->columnas[columnaActual].datos[filaActual] = copiarDatoSeguro(token);
+            }
+            token = strtok(NULL, ",\n\r");
+            columnaActual++;
+        }
+        filaActual++;
+    }
+
+    df->numFilas = filaActual;
+
+    // Redimensionar al tamaño final
+    for (int columnaActual = 0; columnaActual < df->numColumnas; columnaActual++) {
+        char **nuevos_datos = realloc(df->columnas[columnaActual].datos, 
+                                    filaActual * sizeof(char *));
+        EstadoNulo *nuevos_nulos = realloc(df->columnas[columnaActual].esNulo, 
+                                          filaActual * sizeof(EstadoNulo));
+        
         if (!nuevos_datos || !nuevos_nulos) {
-          print_error("Error al expandir memoria");
-          free(lineaLeida);
-          return;
+            liberarRecursosEnError(df, "Error al redimensionar memoria");
+            free(lineaLeida);
+            return;
         }
-
-        df->columnas[i].datos = nuevos_datos;
-        df->columnas[i].esNulo = nuevos_nulos;
-
-        for (int j = filaActual; j < numMaxFilas; j++) {
-          df->columnas[i].datos[j] = NULL;
-          df->columnas[i].esNulo[j] = 0;
-        }
-      }
+        
+        df->columnas[columnaActual].datos = nuevos_datos;
+        df->columnas[columnaActual].esNulo = nuevos_nulos;
     }
 
-    verificarNulos(lineaLeida, filaActual, df);
-    char *token = strtok(lineaLeida, ",\n\r");
-    int col = 0;
-
-    while (token && col < df->numColumnas) {
-      if (!df->columnas[col].esNulo[filaActual]) {
-        df->columnas[col].datos[filaActual] = strdup(token);
-      }
-      token = strtok(NULL, ",\n\r");
-      col++;
-    }
-    filaActual++;
-  }
-
-  df->numFilas = filaActual;
-
-  for (int i = 0; i < df->numColumnas; i++) {
-    df->columnas[i].datos = realloc(df->columnas[i].datos, filaActual * sizeof(char *));
-    df->columnas[i].esNulo = realloc(df->columnas[i].esNulo, filaActual * sizeof(int));
-  }
-
-  free(lineaLeida);
+    free(lineaLeida);
 }
 
 void liberarListaCompleta(Lista *lista) {
@@ -79,8 +129,8 @@ int comparar(void *dato1, void *dato2, TipoDato tipo, const char *operador) {
 
   switch (tipo) {
     case NUMERICO: {
-      int val1 = atoi((char *)dato1);
-      int val2 = atoi((char *)dato2);
+      double val1 = atof((char *)dato1);
+      double val2 = atof((char *)dato2);
 
       if (strcmp(operador, "eq") == 0) return val1 == val2;
       if (strcmp(operador, "neq") == 0) return val1 != val2;
@@ -119,68 +169,71 @@ int comparar(void *dato1, void *dato2, TipoDato tipo, const char *operador) {
   return 0;
 }
 
-void filterCLI(Dataframe *df, const char *nombre_columna, const char *operador, void *valor) {
-  if (!df || !nombre_columna || !operador || !valor) {
-    print_error("Parámetros inválidos para el filtrado");
-    return;
-  }
+void filterCLI(Dataframe *df, const char *nombreColumnaumna, const char *operador, void *valor) {
+    VALIDAR_DF_Y_PARAMETROS(df, nombreColumnaumna);
+    VALIDAR_DF_Y_PARAMETROS(df, operador);
+    VALIDAR_DF_Y_PARAMETROS(df, valor);
 
-  int indice_col = -1;
-  for (int i = 0; i < df->numColumnas; i++) {
-    if (strcmp(df->columnas[i].nombre, nombre_columna) == 0) {
-      indice_col = i;
-      break;
-    }
-  }
-
-  if (indice_col == -1) {
-    print_error("Columna no encontrada");
-    return;
-  }
-
-  if (strcmp(operador, "eq") != 0 && strcmp(operador, "neq") != 0 &&
-      strcmp(operador, "gt") != 0 && strcmp(operador, "lt") != 0) {
-    print_error("Operador inválido. Use: eq, neq, gt, lt");
-    return;
-  }
-
-  Dataframe *nuevo_df = malloc(sizeof(Dataframe));
-  if (!crearDF(nuevo_df, df->numColumnas, df->numFilas, df->indice)) {
-    print_error("Error al crear nuevo dataframe");
-    free(nuevo_df);
-    return;
-  }
-
-  for (int i = 0; i < df->numColumnas; i++) {
-    strncpy(nuevo_df->columnas[i].nombre, df->columnas[i].nombre, 50);
-    nuevo_df->columnas[i].tipo = df->columnas[i].tipo;
-  }
-
-  int nuevas_filas = 0;
-  for (int i = 0; i < df->numFilas; i++) {
-    if (df->columnas[indice_col].esNulo[i]) {
-      continue;
+    int indice_col = encontrarIndiceColumna(df, nombreColumnaumna);
+    if (indice_col == -1) {
+        print_error("Columna no encontrada");
+        return;
     }
 
-    if (comparar(df->columnas[indice_col].datos[i], valor,
-                 df->columnas[indice_col].tipo, operador)) {
-      for (int j = 0; j < df->numColumnas; j++) {
-        nuevo_df->columnas[j].datos[nuevas_filas] =
-            df->columnas[j].datos[i] ? strdup(df->columnas[j].datos[i]) : NULL;
-        nuevo_df->columnas[j].esNulo[nuevas_filas] = df->columnas[j].esNulo[i];
-      }
-      nuevas_filas++;
+    if (strcmp(operador, "eq") != 0 && strcmp(operador, "neq") != 0 &&
+        strcmp(operador, "gt") != 0 && strcmp(operador, "lt") != 0) {
+        print_error("Operador inválido. Use: eq, neq, gt, lt");
+        return;
     }
-  }
 
-  nuevo_df->numFilas = nuevas_filas;
-  liberarMemoriaDF(df_actual);
-  df_actual = nuevo_df;
+    Dataframe *nuevo_df = crearNuevoDataframe(df->numColumnas, df->numFilas, df->indice);
+    if (!nuevo_df) return;
 
-  snprintf(promptTerminal, sizeof(promptTerminal), "[%s: %d,%d]:> ",
-           df_actual->indice, df_actual->numFilas, df_actual->numColumnas);
+    for (int columnaActual = 0; columnaActual < df->numColumnas; columnaActual++) {
+        copiarNombreColumna(nuevo_df->columnas[columnaActual].nombre, 
+                           df->columnas[columnaActual].nombre);
+        nuevo_df->columnas[columnaActual].tipo = df->columnas[columnaActual].tipo;
+    }
 
-  printf(GREEN "Filtrado completado. Quedan %d filas\n" RESET, nuevas_filas);
+    int nuevas_filas = 0;
+    for (int filaActual = 0; filaActual < df->numFilas; filaActual++) {
+        if (!df->columnas[indice_col].esNulo[filaActual]) {
+            if (comparar(df->columnas[indice_col].datos[filaActual], valor,
+                        df->columnas[indice_col].tipo, operador)) {
+                for (int columnaActual = 0; columnaActual < df->numColumnas; columnaActual++) {
+                    nuevo_df->columnas[columnaActual].datos[nuevas_filas] = 
+                        copiarDatoSeguro(df->columnas[columnaActual].datos[filaActual]);
+                    nuevo_df->columnas[columnaActual].esNulo[nuevas_filas] = 
+                        df->columnas[columnaActual].esNulo[filaActual];
+                }
+                nuevas_filas++;
+            }
+        }
+    }
+
+    nuevo_df->numFilas = nuevas_filas;
+
+    // Redimensionar el dataframe al tamaño final
+    for (int columnaActual = 0; columnaActual < nuevo_df->numColumnas; columnaActual++) {
+        char **nuevos_datos = realloc(nuevo_df->columnas[columnaActual].datos, 
+                                    nuevas_filas * sizeof(char *));
+        EstadoNulo *nuevos_nulos = realloc(nuevo_df->columnas[columnaActual].esNulo, 
+                                          nuevas_filas * sizeof(EstadoNulo));
+        
+        if (!nuevos_datos || !nuevos_nulos) {
+            liberarRecursosEnError(nuevo_df, "Error al redimensionar memoria");
+            return;
+        }
+        
+        nuevo_df->columnas[columnaActual].datos = nuevos_datos;
+        nuevo_df->columnas[columnaActual].esNulo = nuevos_nulos;
+    }
+
+    liberarMemoriaDF(dfActual);
+    dfActual = nuevo_df;
+    actualizarPrompt(dfActual);
+
+    printf(GREEN "Filtrado completado. Quedan %d filas\n" RESET, nuevas_filas);
 }
 
 void liberarMemoriaDF(Dataframe *df) {
@@ -201,6 +254,93 @@ void liberarMemoriaDF(Dataframe *df) {
     free(df->columnas);
   }
   free(df);
+}
+
+void quarterCLI(const char *nombreColumnaumna_fecha, const char *nombre_nueva_columna) {
+    VALIDAR_DF_Y_PARAMETROS(dfActual, nombreColumnaumna_fecha);
+    VALIDAR_DF_Y_PARAMETROS(dfActual, nombre_nueva_columna);
+
+    int indice_col = encontrarIndiceColumna(dfActual, nombreColumnaumna_fecha);
+    if (indice_col == -1 || dfActual->columnas[indice_col].tipo != FECHA) {
+        print_error("Columna de fecha no encontrada o tipo incorrecto");
+        return;
+    }
+
+    // Verificar que el nombre de la nueva columna no existe
+    if (encontrarIndiceColumna(dfActual, nombre_nueva_columna) != -1) {
+        print_error("Ya existe una columna con ese nombre");
+        return;
+    }
+
+    Dataframe *nuevo_df = crearNuevoDataframe(dfActual->numColumnas + 1, 
+                                            dfActual->numFilas, 
+                                            dfActual->indice);
+    if (!nuevo_df) return;
+
+    // Copiar columnas existentes hasta la columna de fecha
+    for (int columnaActual = 0; columnaActual <= indice_col; columnaActual++) {
+        copiarNombreColumna(nuevo_df->columnas[columnaActual].nombre, 
+                           dfActual->columnas[columnaActual].nombre);
+        nuevo_df->columnas[columnaActual].tipo = dfActual->columnas[columnaActual].tipo;
+        
+        for (int filaActual = 0; filaActual < dfActual->numFilas; filaActual++) {
+            nuevo_df->columnas[columnaActual].datos[filaActual] = 
+                copiarDatoSeguro(dfActual->columnas[columnaActual].datos[filaActual]);
+            nuevo_df->columnas[columnaActual].esNulo[filaActual] = 
+                dfActual->columnas[columnaActual].esNulo[filaActual];
+        }
+    }
+
+    // Configurar la nueva columna
+    copiarNombreColumna(nuevo_df->columnas[indice_col + 1].nombre, nombre_nueva_columna);
+    nuevo_df->columnas[indice_col + 1].tipo = TEXTO;
+
+    // Copiar el resto de las columnas después de la nueva
+    for (int columnaActual = indice_col + 1; columnaActual < dfActual->numColumnas; columnaActual++) {
+        copiarNombreColumna(nuevo_df->columnas[columnaActual + 1].nombre, 
+                           dfActual->columnas[columnaActual].nombre);
+        nuevo_df->columnas[columnaActual + 1].tipo = dfActual->columnas[columnaActual].tipo;
+        
+        for (int filaActual = 0; filaActual < dfActual->numFilas; filaActual++) {
+            nuevo_df->columnas[columnaActual + 1].datos[filaActual] = 
+                copiarDatoSeguro(dfActual->columnas[columnaActual].datos[filaActual]);
+            nuevo_df->columnas[columnaActual + 1].esNulo[filaActual] = 
+                dfActual->columnas[columnaActual].esNulo[filaActual];
+        }
+    }
+
+    // Calcular trimestres para la nueva columna
+    for (int filaActual = 0; filaActual < dfActual->numFilas; filaActual++) {
+        if (dfActual->columnas[indice_col].esNulo[filaActual]) {
+            nuevo_df->columnas[indice_col + 1].datos[filaActual] = strdup("#N/A");
+            nuevo_df->columnas[indice_col + 1].esNulo[filaActual] = NO_NULO;
+            continue;
+        }
+
+        struct tm fecha = {0};
+        const char *fecha_str = dfActual->columnas[indice_col].datos[filaActual];
+        if (sscanf(fecha_str, "%d-%d-%d", &fecha.tm_year, &fecha.tm_mon, &fecha.tm_mday) != 3) {
+            nuevo_df->columnas[indice_col + 1].datos[filaActual] = strdup("#N/A");
+            nuevo_df->columnas[indice_col + 1].esNulo[filaActual] = NO_NULO;
+            continue;
+        }
+
+        const char *trimestre;
+        if (fecha.tm_mon >= 1 && fecha.tm_mon <= 3) trimestre = "Q1";
+        else if (fecha.tm_mon >= 4 && fecha.tm_mon <= 6) trimestre = "Q2";
+        else if (fecha.tm_mon >= 7 && fecha.tm_mon <= 9) trimestre = "Q3";
+        else if (fecha.tm_mon >= 10 && fecha.tm_mon <= 12) trimestre = "Q4";
+        else trimestre = "#N/A";
+
+        nuevo_df->columnas[indice_col + 1].datos[filaActual] = strdup(trimestre);
+        nuevo_df->columnas[indice_col + 1].esNulo[filaActual] = NO_NULO;
+    }
+
+    liberarMemoriaDF(dfActual);
+    dfActual = nuevo_df;
+    actualizarPrompt(dfActual);
+
+    printf(GREEN "Nueva columna '%s' creada con trimestres\n" RESET, nombre_nueva_columna);
 }
 
 void CLI() {
@@ -239,11 +379,11 @@ void CLI() {
       viewCLI(n);
     }
     else if (strncmp(input, "sort ", 5) == 0) {
-      char nombre_col[50];
+      char nombreColumna[50];
       char order[10] = "asc";
       int esta_desc = 0;
 
-      int parsed = sscanf(input + 5, "%49s %9s", nombre_col, order);
+      int parsed = sscanf(input + 5, "%49s %9s", nombreColumna, order);
       if (parsed == 0) {
         print_error("Comando de ordenamiento inválido");
         continue;
@@ -259,14 +399,15 @@ void CLI() {
           continue;
         }
       }
-      sortCLI(nombre_col, esta_desc);
+      sortCLI(nombreColumna, esta_desc);
     }
     else if (strncmp(input, "delnull ", 8) == 0) {
       delnullCLI(input + 8);
-    } else if (strncmp(input, "delcolum ", 9) == 0) {
-      const char *nombre_columna = input + 9;
-      while (*nombre_columna == ' ') nombre_columna++;
-      delcolumCLI(nombre_columna);
+    }
+    else if (strncmp(input, "delcolum ", 9) == 0) {
+      const char *nombreColumnaumna = input + 9;
+      while (*nombreColumnaumna == ' ') nombreColumnaumna++;
+      delcolumCLI(nombreColumnaumna);
     }
     else if (strncmp(input, "df", 2) == 0 && strlen(input) > 2) {
       char *endptr;
@@ -287,14 +428,14 @@ void CLI() {
         continue;
       }
 
-      if (!df_actual) {
+      if (!dfActual) {
         print_error("No hay dataframe activo");
         continue;
       }
 
       int col_idx = -1;
-      for (int i = 0; i < df_actual->numColumnas; i++) {
-        if (strcmp(df_actual->columnas[i].nombre, columna) == 0) {
+      for (int i = 0; i < dfActual->numColumnas; i++) {
+        if (strcmp(dfActual->columnas[i].nombre, columna) == 0) {
           col_idx = i;
           break;
         }
@@ -306,7 +447,7 @@ void CLI() {
       }
 
       void *valor_convertido = NULL;
-      switch (df_actual->columnas[col_idx].tipo) {
+      switch (dfActual->columnas[col_idx].tipo) {
         case NUMERICO: {
           double *num_val = malloc(sizeof(double));
           if (!num_val) {
@@ -327,8 +468,19 @@ void CLI() {
           break;
       }
 
-      filterCLI(df_actual, columna, operador, valor_convertido);
+      filterCLI(dfActual, columna, operador, valor_convertido);
       free(valor_convertido);
+    }
+    else if (strncmp(input, "quarter ", 8) == 0) {
+      char col_fecha[50], col_nueva[50];
+      
+      int parsed = sscanf(input + 8, "%49s %49s", col_fecha, col_nueva);
+      if (parsed != 2) {
+        print_error("Uso: quarter [columna_fecha] [nombre_nueva_columna]");
+        continue;
+      }
+
+      quarterCLI(col_fecha, col_nueva);
     }
   }
 }
@@ -350,29 +502,29 @@ void agregarDF(Dataframe *nuevoDF) {
   listaDF.primero = nuevoNodo;
 }
 
-void delcolumCLI(const char *nombre_col) {
-  if (!df_actual || !nombre_col) {
+void delcolumCLI(const char *nombreColumna) {
+  if (!dfActual || !nombreColumna) {
     print_error("No hay df activo o nombre de columna inválido");
     return;
   }
 
-  char nombre_col_limpio[51];
-  strncpy(nombre_col_limpio, nombre_col, 50);
-  nombre_col_limpio[50] = '\0';
-  for (int i = 0; nombre_col_limpio[i]; i++) {
-    nombre_col_limpio[i] = tolower(nombre_col_limpio[i]);
+  char nombreColumna_limpio[51];
+  strncpy(nombreColumna_limpio, nombreColumna, 50);
+  nombreColumna_limpio[50] = '\0';
+  for (int i = 0; nombreColumna_limpio[i]; i++) {
+    nombreColumna_limpio[i] = tolower(nombreColumna_limpio[i]);
   }
 
   int indice_col = -1;
-  for (int i = 0; i < df_actual->numColumnas; i++) {
+  for (int i = 0; i < dfActual->numColumnas; i++) {
     char nombre_actual_limpio[51];
-    strncpy(nombre_actual_limpio, df_actual->columnas[i].nombre, 50);
+    strncpy(nombre_actual_limpio, dfActual->columnas[i].nombre, 50);
     nombre_actual_limpio[50] = '\0';
     for (int j = 0; nombre_actual_limpio[j]; j++) {
       nombre_actual_limpio[j] = tolower(nombre_actual_limpio[j]);
     }
 
-    if (strcmp(nombre_actual_limpio, nombre_col_limpio) == 0) {
+    if (strcmp(nombre_actual_limpio, nombreColumna_limpio) == 0) {
       indice_col = i;
       break;
     }
@@ -383,7 +535,7 @@ void delcolumCLI(const char *nombre_col) {
     return;
   }
 
-  int nuevasColumnas = df_actual->numColumnas - 1;
+  int nuevasColumnas = dfActual->numColumnas - 1;
 
   if (nuevasColumnas == 0) {
     print_error("No se puede eliminar la última columna");
@@ -391,46 +543,46 @@ void delcolumCLI(const char *nombre_col) {
   }
 
   Dataframe *nuevo_df = malloc(sizeof(Dataframe));
-  if (!crearDF(nuevo_df, nuevasColumnas, df_actual->numFilas, df_actual->indice)) {
+  if (!crearDF(nuevo_df, nuevasColumnas, dfActual->numFilas, dfActual->indice)) {
     print_error("Error al crear nuevo dataframe");
     free(nuevo_df);
     return;
   }
 
   int nuevaColIndex = 0;
-  for (int i = 0; i < df_actual->numColumnas; i++) {
+  for (int i = 0; i < dfActual->numColumnas; i++) {
     if (i == indice_col) continue;
 
-    strncpy(nuevo_df->columnas[nuevaColIndex].nombre, df_actual->columnas[i].nombre, 50);
-    nuevo_df->columnas[nuevaColIndex].tipo = df_actual->columnas[i].tipo;
+    strncpy(nuevo_df->columnas[nuevaColIndex].nombre, dfActual->columnas[i].nombre, 50);
+    nuevo_df->columnas[nuevaColIndex].tipo = dfActual->columnas[i].tipo;
 
-    for (int j = 0; j < df_actual->numFilas; j++) {
+    for (int j = 0; j < dfActual->numFilas; j++) {
       nuevo_df->columnas[nuevaColIndex].datos[j] =
-          df_actual->columnas[i].datos[j] ? strdup(df_actual->columnas[i].datos[j]) : NULL;
-      nuevo_df->columnas[nuevaColIndex].esNulo[j] = df_actual->columnas[i].esNulo[j];
+          dfActual->columnas[i].datos[j] ? strdup(dfActual->columnas[i].datos[j]) : NULL;
+      nuevo_df->columnas[nuevaColIndex].esNulo[j] = dfActual->columnas[i].esNulo[j];
     }
 
     nuevaColIndex++;
   }
 
-  liberarMemoriaDF(df_actual);
-  df_actual = nuevo_df;
+  liberarMemoriaDF(dfActual);
+  dfActual = nuevo_df;
 
   snprintf(promptTerminal, sizeof(promptTerminal), "[%s: %d,%d]:> ",
-           df_actual->indice, df_actual->numFilas, df_actual->numColumnas);
+           dfActual->indice, dfActual->numFilas, dfActual->numColumnas);
 
-  printf(GREEN "Se eliminó la columna '%s'\n" RESET, nombre_col);
+  printf(GREEN "Se eliminó la columna '%s'\n" RESET, nombreColumna);
 }
 
-void delnullCLI(const char *nombre_col) {
-  if (!df_actual || !nombre_col) {
+void delnullCLI(const char *nombreColumna) {
+  if (!dfActual || !nombreColumna) {
     print_error("No hay df activo o nombre de columna inválido");
     return;
   }
 
   int indice_col = -1;
-  for (int i = 0; i < df_actual->numColumnas; i++) {
-    if (strcmp(df_actual->columnas[i].nombre, nombre_col) == 0) {
+  for (int i = 0; i < dfActual->numColumnas; i++) {
+    if (strcmp(dfActual->columnas[i].nombre, nombreColumna) == 0) {
       indice_col = i;
       break;
     }
@@ -441,51 +593,51 @@ void delnullCLI(const char *nombre_col) {
     return;
   }
 
-  int nullRows = 0;
-  for (int i = 0; i < df_actual->numFilas; i++) {
-    if (df_actual->columnas[indice_col].esNulo[i]) {
-      nullRows++;
+  int filasNulas = 0;
+  for (int i = 0; i < dfActual->numFilas; i++) {
+    if (dfActual->columnas[indice_col].esNulo[i]) {
+      filasNulas++;
     }
   }
 
-  if (nullRows == 0) {
+  if (filasNulas == 0) {
     printf(GREEN "No hay valores nulos para eliminar\n" RESET);
     return;
   }
 
-  int validRows = df_actual->numFilas - nullRows;
+  int validRows = dfActual->numFilas - filasNulas;
 
   Dataframe *nuevo_df = malloc(sizeof(Dataframe));
-  if (!crearDF(nuevo_df, df_actual->numColumnas, validRows, df_actual->indice)) {
+  if (!crearDF(nuevo_df, dfActual->numColumnas, validRows, dfActual->indice)) {
     print_error("Error al crear nuevo dataframe");
     free(nuevo_df);
     return;
   }
 
-  for (int i = 0; i < df_actual->numColumnas; i++) {
-    strncpy(nuevo_df->columnas[i].nombre, df_actual->columnas[i].nombre, 50);
-    nuevo_df->columnas[i].tipo = df_actual->columnas[i].tipo;
+  for (int i = 0; i < dfActual->numColumnas; i++) {
+    strncpy(nuevo_df->columnas[i].nombre, dfActual->columnas[i].nombre, 50);
+    nuevo_df->columnas[i].tipo = dfActual->columnas[i].tipo;
   }
 
   int newRow = 0;
-  for (int i = 0; i < df_actual->numFilas; i++) {
-    if (!df_actual->columnas[indice_col].esNulo[i]) {
-      for (int j = 0; j < df_actual->numColumnas; j++) {
+  for (int i = 0; i < dfActual->numFilas; i++) {
+    if (!dfActual->columnas[indice_col].esNulo[i]) {
+      for (int j = 0; j < dfActual->numColumnas; j++) {
         nuevo_df->columnas[j].datos[newRow] =
-            df_actual->columnas[j].datos[i] ? strdup(df_actual->columnas[j].datos[i]) : NULL;
-        nuevo_df->columnas[j].esNulo[newRow] = df_actual->columnas[j].esNulo[i];
+            dfActual->columnas[j].datos[i] ? strdup(dfActual->columnas[j].datos[i]) : NULL;
+        nuevo_df->columnas[j].esNulo[newRow] = dfActual->columnas[j].esNulo[i];
       }
       newRow++;
     }
   }
 
-  liberarMemoriaDF(df_actual);
-  df_actual = nuevo_df;
+  liberarMemoriaDF(dfActual);
+  dfActual = nuevo_df;
 
   snprintf(promptTerminal, sizeof(promptTerminal), "[%s: %d,%d]:> ",
-           df_actual->indice, df_actual->numFilas, df_actual->numColumnas);
+           dfActual->indice, dfActual->numFilas, dfActual->numColumnas);
 
-  printf(GREEN "Se eliminaron %d filas con valores nulos\n" RESET, nullRows);
+  printf(GREEN "Se eliminaron %d filas con valores nulos\n" RESET, filasNulas);
 }
 
 void contarFilasYColumnas(const char *nombre_archivo, int *numFilas, int *numColumnas) {
@@ -602,112 +754,83 @@ int crearDF(Dataframe *df, int numColumnas, int numFilas, const char *nombre_df)
   df->indice[sizeof(df->indice) - 1] = '\0';
 
   return 1;
-  if (!df || numColumnas <= 0 || numFilas <= 0 || !nombre_df) {
-    print_error("Invalid parameters");
-    return 0;
-  }
-
-  df->columnas = calloc(numColumnas, sizeof(Columna));
-  if (!df->columnas) {
-    print_error("Memory allocation failed");
-    return 0;
-  }
-
-  for (int i = 0; i < numColumnas; i++) {
-    df->columnas[i].datos = calloc(numFilas, sizeof(char *));
-    df->columnas[i].esNulo = calloc(numFilas, sizeof(int));
-
-    if (!df->columnas[i].datos || !df->columnas[i].esNulo) {
-      for (int j = 0; j < i; j++) {
-        free(df->columnas[j].datos);
-        free(df->columnas[j].esNulo);
-      }
-      free(df->columnas);
-      print_error("Memory allocation failed");
-      return 0;
-    }
-  }
-
-  df->numColumnas = numColumnas;
-  df->numFilas = numFilas;
-  strncpy(df->indice, nombre_df, sizeof(df->indice) - 1);
-  df->indice[sizeof(df->indice) - 1] = '\0';
-
-  return 1;
 }
 
 void loadearCSV(const char *nombre_archivo) {
-  if (!nombre_archivo) {
-    print_error("Nombre de archivo inválido");
-    return;
-  }
+    VALIDAR_DF_Y_PARAMETROS(nombre_archivo, nombre_archivo);
 
-  FILE *file = fopen(nombre_archivo, "r");
-  if (!file) {
-    print_error("No se puede abrir el archivo");
-    return;
-  }
-
-  char *headerLine = NULL;
-  size_t len = 0;
-  if (getline(&headerLine, &len, file) == -1) {
-    print_error("Error al leer encabezados");
-    free(headerLine);
-    fclose(file);
-    return;
-  }
-
-  int numColumnas = contarColumnas(headerLine);
-  if (numColumnas > MAX_COLUMNS) {
-    print_error("Demasiadas columnas");
-    free(headerLine);
-    fclose(file);
-    return;
-  }
-
-  const int BATCH_SIZE = 1000;
-  char nombre_df[10];
-  snprintf(nombre_df, sizeof(nombre_df), "df%d", listaDF.numDFs);
-
-  Dataframe *nuevo_df = malloc(sizeof(Dataframe));
-  if (!crearDF(nuevo_df, numColumnas, BATCH_SIZE, nombre_df)) {
-    print_error("Error al crear dataframe");
-    free(headerLine);
-    fclose(file);
-    return;
-  }
-
-  char *token = strtok(headerLine, ",\n\r");
-  int col = 0;
-  while (token && col < numColumnas) {
-    strncpy(nuevo_df->columnas[col].nombre, token, sizeof(nuevo_df->columnas[col].nombre) - 1);
-    col++;
-    token = strtok(NULL, ",\n\r");
-  }
-
-  free(headerLine);
-
-  procesarPorLotes(file, nuevo_df, BATCH_SIZE);
-  fclose(file);
-
-  if (nuevo_df->numFilas > 0) {
-    for (int i = 0; i < nuevo_df->numColumnas; i++) {
-      nuevo_df->columnas[i].datos = realloc(nuevo_df->columnas[i].datos, nuevo_df->numFilas * sizeof(char *));
-      nuevo_df->columnas[i].esNulo = realloc(nuevo_df->columnas[i].esNulo, nuevo_df->numFilas * sizeof(int));
+    FILE *file = fopen(nombre_archivo, "r");
+    if (!file) {
+        print_error("No se puede abrir el archivo");
+        return;
     }
-  }
 
-  df_actual = nuevo_df;
-  agregarDF(nuevo_df);
-  listaDF.numDFs++;
+    char *headerLine = NULL;
+    size_t len = 0;
+    if (getline(&headerLine, &len, file) == -1) {
+        print_error("Error al leer encabezados");
+        free(headerLine);
+        fclose(file);
+        return;
+    }
 
-  tiposColumnas(df_actual);
+    int numColumnas = contarColumnas(headerLine);
+    if (numColumnas > MAX_COLUMNS) {
+        print_error("Demasiadas columnas");
+        free(headerLine);
+        fclose(file);
+        return;
+    }
 
-  snprintf(promptTerminal, sizeof(promptTerminal), "[%s: %d,%d]:> ",
-           df_actual->indice, df_actual->numFilas, df_actual->numColumnas);
+    char nombre_df[MAX_INDICE_LENGTH];
+    snprintf(nombre_df, sizeof(nombre_df), "df%d", listaDF.numDFs);
 
-  printf(GREEN "Archivo cargado: %d filas, %d columnas\n" RESET,
-         df_actual->numFilas, df_actual->numColumnas);
+    Dataframe *nuevo_df = crearNuevoDataframe(numColumnas, BATCH_SIZE, nombre_df);
+    if (!nuevo_df) {
+        free(headerLine);
+        fclose(file);
+        return;
+    }
+
+    char *token = strtok(headerLine, ",\n\r");
+    int columnaActual = 0;
+    while (token && columnaActual < numColumnas) {
+        copiarNombreColumna(nuevo_df->columnas[columnaActual].nombre, token);
+        columnaActual++;
+        token = strtok(NULL, ",\n\r");
+    }
+
+    free(headerLine);
+
+    procesarPorLotes(file, nuevo_df, BATCH_SIZE);
+    fclose(file);
+
+    if (nuevo_df->numFilas > 0) {
+        for (int columnaActual = 0; columnaActual < nuevo_df->numColumnas; columnaActual++) {
+            char **nuevos_datos = realloc(nuevo_df->columnas[columnaActual].datos, 
+                                        nuevo_df->numFilas * sizeof(char *));
+            EstadoNulo *nuevos_nulos = realloc(nuevo_df->columnas[columnaActual].esNulo, 
+                                              nuevo_df->numFilas * sizeof(EstadoNulo));
+            
+            if (!nuevos_datos || !nuevos_nulos) {
+                liberarRecursosEnError(nuevo_df, "Error al redimensionar memoria");
+                return;
+            }
+            
+            nuevo_df->columnas[columnaActual].datos = nuevos_datos;
+            nuevo_df->columnas[columnaActual].esNulo = nuevos_nulos;
+        }
+    }
+
+    dfActual = nuevo_df;
+    agregarDF(nuevo_df);
+    listaDF.numDFs++;
+
+    tiposColumnas(dfActual);
+    actualizarPrompt(dfActual);
+
+    printf(GREEN "Archivo cargado: %d filas, %d columnas\n" RESET,
+           dfActual->numFilas, dfActual->numColumnas);
 }
 
 void cortarEspacios(char *str) {
@@ -851,15 +974,15 @@ void cambiarDF(Lista *lista, int indice) {
     return;
   }
 
-  df_actual = nodoActual->df;
+  dfActual = nodoActual->df;
   snprintf(promptTerminal, sizeof(promptTerminal), "[%s: %d,%d]:> ",
-           df_actual->indice, df_actual->numFilas, df_actual->numColumnas);
+           dfActual->indice, dfActual->numFilas, dfActual->numColumnas);
   printf(GREEN "Cambiado a %s con %d filas y %d columnas\n" RESET,
          nodoActual->df->indice, nodoActual->df->numFilas,
          nodoActual->df->numColumnas);
 }
 void saveCLI(const char *nombre_archivo) {
-  if (!df_actual) {
+  if (!dfActual) {
     print_error("No hay df activo para guardar.");
     return;
   }
@@ -867,7 +990,7 @@ void saveCLI(const char *nombre_archivo) {
   char nombre_saveCLI[MAX_FILENAME];
   if (nombre_archivo == NULL || strlen(nombre_archivo) == 0) {
     snprintf(nombre_saveCLI, sizeof(nombre_saveCLI), "%s.csv",
-             df_actual->indice);
+             dfActual->indice);
   } else {
     strncpy(nombre_saveCLI, nombre_archivo, sizeof(nombre_saveCLI) - 1);
     nombre_saveCLI[sizeof(nombre_saveCLI) - 1] = '\0';
@@ -889,19 +1012,19 @@ void saveCLI(const char *nombre_archivo) {
     return;
   }
 
-  for (int col = 0; col < df_actual->numColumnas; col++) {
-    fprintf(file, "%s", df_actual->columnas[col].nombre);
-    if (col < df_actual->numColumnas - 1) {
+  for (int col = 0; col < dfActual->numColumnas; col++) {
+    fprintf(file, "%s", dfActual->columnas[col].nombre);
+    if (col < dfActual->numColumnas - 1) {
       fprintf(file, ",");
     }
   }
   fprintf(file, "\n");
 
-  for (int row = 0; row < df_actual->numFilas; row++) {
-    for (int col = 0; col < df_actual->numColumnas; col++) {
-      if (df_actual->columnas[col].esNulo[row]) {
-      } else if (df_actual->columnas[col].datos[row] != NULL) {
-        char *valor = (char *)df_actual->columnas[col].datos[row];
+  for (int row = 0; row < dfActual->numFilas; row++) {
+    for (int col = 0; col < dfActual->numColumnas; col++) {
+      if (dfActual->columnas[col].esNulo[row]) {
+      } else if (dfActual->columnas[col].datos[row] != NULL) {
+        char *valor = (char *)dfActual->columnas[col].datos[row];
         int contiene_comas =
             (strchr(valor, ',') != NULL || strchr(valor, '"') != NULL);
 
@@ -921,7 +1044,7 @@ void saveCLI(const char *nombre_archivo) {
         }
       }
 
-      if (col < df_actual->numColumnas - 1) {
+      if (col < dfActual->numColumnas - 1) {
         fprintf(file, ",");
       }
     }
@@ -932,22 +1055,22 @@ void saveCLI(const char *nombre_archivo) {
   printf(GREEN "df guardado exitosamente en %s\n" RESET, nombre_saveCLI);
 }
 void metaCLI() {
-  if (!df_actual) {
+  if (!dfActual) {
     print_error("No hay df cargado.");
     return;
   }
 
-  for (int col = 0; col < df_actual->numColumnas; col++) {
+  for (int col = 0; col < dfActual->numColumnas; col++) {
     int contador_nulos = 0;
 
-    for (int row = 0; row < df_actual->numFilas; row++) {
-      if (df_actual->columnas[col].esNulo[row]) {
+    for (int row = 0; row < dfActual->numFilas; row++) {
+      if (dfActual->columnas[col].esNulo[row]) {
         contador_nulos++;
       }
     }
 
     char *tipo;
-    switch (df_actual->columnas[col].tipo) {
+    switch (dfActual->columnas[col].tipo) {
       case TEXTO:
         tipo = "Texto";
         break;
@@ -963,43 +1086,43 @@ void metaCLI() {
     }
 
     printf(GREEN "%s: %s (Valores nulos: %d)\n" RESET,
-           df_actual->columnas[col].nombre, tipo, contador_nulos);
+           dfActual->columnas[col].nombre, tipo, contador_nulos);
   }
 }
 
 void viewCLI(int n) {
-  if (!df_actual) {
+  if (!dfActual) {
     print_error("No hay df cargado.");
     return;
   }
 
-  for (int j = 0; j < df_actual->numColumnas; j++) {
-    printf("%s", df_actual->columnas[j].nombre);
+  for (int j = 0; j < dfActual->numColumnas; j++) {
+    printf("%s", dfActual->columnas[j].nombre);
 
-    if (j < df_actual->numColumnas - 1) {
+    if (j < dfActual->numColumnas - 1) {
       printf(",");
     }
   }
 
   printf("\n");
 
-  int filas_a_mostrar = (n < df_actual->numFilas) ? n : df_actual->numFilas;
+  int filas_a_mostrar = (n < dfActual->numFilas) ? n : dfActual->numFilas;
 
   for (int i = 0; i < filas_a_mostrar; i++) {
-    for (int j = 0; j < df_actual->numColumnas; j++) {
-      if (df_actual->columnas[j].esNulo[i]) {
+    for (int j = 0; j < dfActual->numColumnas; j++) {
+      if (dfActual->columnas[j].esNulo[i]) {
         printf("1");
 
       } else {
-        if (df_actual->columnas[j].datos[i] == NULL) {
+        if (dfActual->columnas[j].datos[i] == NULL) {
           printf("Nulo");
 
         } else {
-          printf("%s", (char *)df_actual->columnas[j].datos[i]);
+          printf("%s", (char *)dfActual->columnas[j].datos[i]);
         }
       }
 
-      if (j < df_actual->numColumnas - 1) {
+      if (j < dfActual->numColumnas - 1) {
         printf(",");
       }
     }
@@ -1008,9 +1131,9 @@ void viewCLI(int n) {
   }
 }
 
-int encontrarIndiceColumna(Dataframe *df, const char *nombre_columna) {
+int encontrarIndiceColumna(Dataframe *df, const char *nombreColumnaumna) {
   for (int i = 0; i < df->numColumnas; i++) {
-    if (strcmp(df->columnas[i].nombre, nombre_columna) == 0) {
+    if (strcmp(df->columnas[i].nombre, nombreColumnaumna) == 0) {
       return i;
     }
   }
@@ -1044,22 +1167,22 @@ void ordenarDataframe(Dataframe *df, int indice_columna, int descendente) {
   }
 }
 
-void sortCLI(const char *nombre_columna, int descendente) {
-  if (!df_actual) {
+void sortCLI(const char *nombreColumnaumna, int descendente) {
+  if (!dfActual) {
     print_error("No hay df cargado.");
     return;
   }
 
-  int indice_columna = encontrarIndiceColumna(df_actual, nombre_columna);
+  int indice_columna = encontrarIndiceColumna(dfActual, nombreColumnaumna);
   if (indice_columna == -1) {
     print_error("Columna no encontrada.");
     return;
   }
 
-  ordenarDataframe(df_actual, indice_columna, descendente);
+  ordenarDataframe(dfActual, indice_columna, descendente);
 
   printf(GREEN "df ordenado por columna '%s' en orden %s.\n" RESET,
-         nombre_columna, descendente ? "descendente" : "ascendente");
+         nombreColumnaumna, descendente ? "descendente" : "ascendente");
 }
 
 void verificarNulos(char *lineaLeida, int fila, Dataframe *df) {
