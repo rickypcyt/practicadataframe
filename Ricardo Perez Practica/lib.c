@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include <sys/types.h>
 #include "lib.h"
+#include <math.h>
 
 Lista listaDF = {0, NULL};    
 Dataframe *dfActual = NULL;  
@@ -125,48 +126,60 @@ void liberarListaCompleta(Lista *lista) {
 }
 
 int comparar(void *dato1, void *dato2, TipoDato tipo, const char *operador) {
-  if (!dato1 || !dato2) return 0;
+    if (!dato1 || !dato2) return 0;
 
-  switch (tipo) {
-    case NUMERICO: {
-      double val1 = atof((char *)dato1);
-      double val2 = atof((char *)dato2);
+    switch (tipo) {
+        case NUMERICO: {
+            char *str1 = (char *)dato1;
+            char *str2 = (char *)dato2;
+            double val1, val2;
+            char *endptr1, *endptr2;
 
-      if (strcmp(operador, "eq") == 0) return val1 == val2;
-      if (strcmp(operador, "neq") == 0) return val1 != val2;
-      if (strcmp(operador, "gt") == 0) return val1 > val2;
-      if (strcmp(operador, "lt") == 0) return val1 < val2;
-      break;
+            val1 = strtod(str1, &endptr1);
+            val2 = strtod(str2, &endptr2);
+
+            // Verificar si la conversión fue exitosa
+            if (endptr1 == str1 || endptr2 == str2) {
+                return 0;
+            }
+
+            if (strcmp(operador, "eq") == 0) return fabs(val1 - val2) < 1e-10;
+            if (strcmp(operador, "neq") == 0) return fabs(val1 - val2) >= 1e-10;
+            if (strcmp(operador, "gt") == 0) return val1 > val2;
+            if (strcmp(operador, "lt") == 0) return val1 < val2;
+            break;
+        }
+        case FECHA: {
+            struct tm tm1 = {0}, tm2 = {0};
+            if (sscanf((char *)dato1, "%d-%d-%d", &tm1.tm_year, &tm1.tm_mon, &tm1.tm_mday) != 3 ||
+                sscanf((char *)dato2, "%d-%d-%d", &tm2.tm_year, &tm2.tm_mon, &tm2.tm_mday) != 3) {
+                return 0;
+            }
+
+            tm1.tm_year -= 1900;
+            tm2.tm_year -= 1900;
+            tm1.tm_mon -= 1;
+            tm2.tm_mon -= 1;
+
+            time_t time1 = mktime(&tm1);
+            time_t time2 = mktime(&tm2);
+
+            if (strcmp(operador, "eq") == 0) return time1 == time2;
+            if (strcmp(operador, "neq") == 0) return time1 != time2;
+            if (strcmp(operador, "gt") == 0) return time1 > time2;
+            if (strcmp(operador, "lt") == 0) return time1 < time2;
+            break;
+        }
+        case TEXTO: {
+            int comp = strcmp((char *)dato1, (char *)dato2);
+            if (strcmp(operador, "eq") == 0) return comp == 0;
+            if (strcmp(operador, "neq") == 0) return comp != 0;
+            if (strcmp(operador, "gt") == 0) return comp > 0;
+            if (strcmp(operador, "lt") == 0) return comp < 0;
+            break;
+        }
     }
-    case FECHA: {
-      struct tm tm1 = {0}, tm2 = {0};
-      sscanf((char *)dato1, "%d-%d-%d", &tm1.tm_year, &tm1.tm_mon, &tm1.tm_mday);
-      sscanf((char *)dato2, "%d-%d-%d", &tm2.tm_year, &tm2.tm_mon, &tm2.tm_mday);
-
-      tm1.tm_year -= 1900;
-      tm2.tm_year -= 1900;
-      tm1.tm_mon -= 1;
-      tm2.tm_mon -= 1;
-
-      time_t time1 = mktime(&tm1);
-      time_t time2 = mktime(&tm2);
-
-      if (strcmp(operador, "eq") == 0) return time1 == time2;
-      if (strcmp(operador, "neq") == 0) return time1 != time2;
-      if (strcmp(operador, "gt") == 0) return time1 > time2;
-      if (strcmp(operador, "lt") == 0) return time1 < time2;
-      break;
-    }
-    case TEXTO: {
-      int comp = strcmp((char *)dato1, (char *)dato2);
-      if (strcmp(operador, "eq") == 0) return comp == 0;
-      if (strcmp(operador, "neq") == 0) return comp != 0;
-      if (strcmp(operador, "gt") == 0) return comp > 0;
-      if (strcmp(operador, "lt") == 0) return comp < 0;
-      break;
-    }
-  }
-  return 0;
+    return 0;
 }
 
 void filterCLI(Dataframe *df, const char *nombreColumnaumna, const char *operador, void *valor) {
@@ -186,49 +199,62 @@ void filterCLI(Dataframe *df, const char *nombreColumnaumna, const char *operado
         return;
     }
 
-    Dataframe *nuevo_df = crearNuevoDataframe(df->numColumnas, df->numFilas, df->indice);
-    if (!nuevo_df) return;
+    // Primero contar cuántas filas cumplen la condición
+    int nuevas_filas = 0;
+    for (int filaActual = 0; filaActual < df->numFilas; filaActual++) {
+        if (!df->columnas[indice_col].esNulo[filaActual]) {
+            void *valor_actual = df->columnas[indice_col].datos[filaActual];
+            if (valor_actual && comparar(valor_actual, valor,
+                        df->columnas[indice_col].tipo, operador)) {
+                nuevas_filas++;
+            }
+        }
+    }
 
+    if (nuevas_filas == 0) {
+        printf(GREEN "No se encontraron filas que cumplan la condición\n" RESET);
+        return;
+    }
+
+    // Crear nuevo dataframe con el tamaño exacto
+    Dataframe *nuevo_df = malloc(sizeof(Dataframe));
+    if (!nuevo_df) {
+        print_error("Error al asignar memoria para el nuevo dataframe");
+        return;
+    }
+
+    if (!crearDF(nuevo_df, df->numColumnas, nuevas_filas, df->indice)) {
+        free(nuevo_df);
+        print_error("Error al crear el nuevo dataframe");
+        return;
+    }
+
+    // Copiar nombres y tipos de columnas
     for (int columnaActual = 0; columnaActual < df->numColumnas; columnaActual++) {
         copiarNombreColumna(nuevo_df->columnas[columnaActual].nombre, 
                            df->columnas[columnaActual].nombre);
         nuevo_df->columnas[columnaActual].tipo = df->columnas[columnaActual].tipo;
     }
 
-    int nuevas_filas = 0;
+    // Copiar solo las filas que cumplen la condición
+    int fila_destino = 0;
     for (int filaActual = 0; filaActual < df->numFilas; filaActual++) {
         if (!df->columnas[indice_col].esNulo[filaActual]) {
-            if (comparar(df->columnas[indice_col].datos[filaActual], valor,
+            void *valor_actual = df->columnas[indice_col].datos[filaActual];
+            if (valor_actual && comparar(valor_actual, valor,
                         df->columnas[indice_col].tipo, operador)) {
                 for (int columnaActual = 0; columnaActual < df->numColumnas; columnaActual++) {
-                    nuevo_df->columnas[columnaActual].datos[nuevas_filas] = 
+                    nuevo_df->columnas[columnaActual].datos[fila_destino] = 
                         copiarDatoSeguro(df->columnas[columnaActual].datos[filaActual]);
-                    nuevo_df->columnas[columnaActual].esNulo[nuevas_filas] = 
+                    nuevo_df->columnas[columnaActual].esNulo[fila_destino] = 
                         df->columnas[columnaActual].esNulo[filaActual];
                 }
-                nuevas_filas++;
+                fila_destino++;
             }
         }
     }
 
-    nuevo_df->numFilas = nuevas_filas;
-
-    // Redimensionar el dataframe al tamaño final
-    for (int columnaActual = 0; columnaActual < nuevo_df->numColumnas; columnaActual++) {
-        char **nuevos_datos = realloc(nuevo_df->columnas[columnaActual].datos, 
-                                    nuevas_filas * sizeof(char *));
-        EstadoNulo *nuevos_nulos = realloc(nuevo_df->columnas[columnaActual].esNulo, 
-                                          nuevas_filas * sizeof(EstadoNulo));
-        
-        if (!nuevos_datos || !nuevos_nulos) {
-            liberarRecursosEnError(nuevo_df, "Error al redimensionar memoria");
-            return;
-        }
-        
-        nuevo_df->columnas[columnaActual].datos = nuevos_datos;
-        nuevo_df->columnas[columnaActual].esNulo = nuevos_nulos;
-    }
-
+    // Liberar el dataframe anterior y actualizar el actual
     liberarMemoriaDF(dfActual);
     dfActual = nuevo_df;
     actualizarPrompt(dfActual);
@@ -446,26 +472,11 @@ void CLI() {
         continue;
       }
 
-      void *valor_convertido = NULL;
-      switch (dfActual->columnas[col_idx].tipo) {
-        case NUMERICO: {
-          double *num_val = malloc(sizeof(double));
-          if (!num_val) {
-            print_error("Error de memoria");
-            continue;
-          }
-          *num_val = atof(valor);
-          valor_convertido = num_val;
-          break;
-        }
-        case FECHA:
-        case TEXTO:
-          valor_convertido = strdup(valor);
-          if (!valor_convertido) {
-            print_error("Error de memoria");
-            continue;
-          }
-          break;
+      // Crear una copia del valor para evitar problemas de memoria
+      char *valor_convertido = strdup(valor);
+      if (!valor_convertido) {
+        print_error("Error de memoria");
+        continue;
       }
 
       filterCLI(dfActual, columna, operador, valor_convertido);
