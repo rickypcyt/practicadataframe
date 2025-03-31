@@ -18,7 +18,7 @@ void procesarPorLotes(FILE *archivo, Dataframe *df, int tamanoLote) {
 
       for (int i = 0; i < df->numColumnas; i++) {
         char **nuevos_datos = realloc(df->columnas[i].datos, numMaxFilas * sizeof(char *));
-        int **nuevos_nulos = realloc(df->columnas[i].esNulo, numMaxFilas * sizeof(int *));
+        unsigned int *nuevos_nulos = realloc(df->columnas[i].esNulo, numMaxFilas * sizeof(unsigned int *));
 
         if (!nuevos_datos || !nuevos_nulos) {
           print_error("Error al expandir memoria");
@@ -212,6 +212,7 @@ void CLI() {
     cortarEspacios(input);
 
     if (strcmp(input, "quit") == 0) {
+      printf(GREEN "EXIT PROGRAM\n" RESET);      
       break;
     }
     else if (strncmp(input, "load ", 5) == 0) {
@@ -951,7 +952,7 @@ void metaCLI() {
         tipo = "Texto";
         break;
       case NUMERICO:
-        tipo = "NumÃ©rico";
+        tipo = "Numerico";
         break;
       case FECHA:
         tipo = "Fecha";
@@ -991,7 +992,7 @@ void viewCLI(int n) {
 
       } else {
         if (df_actual->columnas[j].datos[i] == NULL) {
-          printf("");
+          printf("Nulo");
 
         } else {
           printf("%s", (char *)df_actual->columnas[j].datos[i]);
