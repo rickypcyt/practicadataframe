@@ -10,12 +10,12 @@
 
 // Constantes de configuración del sistema
 #define MAX_LINE_LENGTH 4096
-#define MAX_COLUMNS 100
+#define MAX_COLUMNS 1000
 #define MAX_ROWS 5000
 #define MAX_FILENAME 256
 #define MAX_NOMBRE_COLUMNA 50
 #define MAX_INDICE_LENGTH 20
-#define BATCH_SIZE 1000
+#define BATCH_SIZE 5000
 
 // Códigos de color ANSI para salida por consola
 #define RED "\x1b[31m"

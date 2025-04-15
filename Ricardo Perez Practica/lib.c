@@ -1,7 +1,4 @@
-#define _POSIX_C_SOURCE 200809L
-#include <sys/types.h>
 #include "lib.h"
-#include <math.h>
 
 Lista listaDF = {0, NULL};    
 Dataframe *dfActual = NULL;  

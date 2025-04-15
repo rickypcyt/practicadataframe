@@ -7,6 +7,6 @@ int main() {
 
   // Iniciar interfaz de línea de comandos interactiva
   CLI();
-  liberarListaCompleta(&listaDF); // Add this line
+  liberarListaCompleta(&listaDF);
   return 0;
 }
