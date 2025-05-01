@@ -1,5 +1,22 @@
 #include "lib.h"
 
+// Declaraciones de funciones estáticas
+static int expandirMemoriaDataframe(Dataframe *df, int nuevoTamano);
+static void procesarLineaCSV(const char *linea, Dataframe *df, int fila);
+static int validarParametros(const void *param, const char *nombre_param);
+static int validarDataframe(const Dataframe *df);
+static int validarIndiceColumna(const Dataframe *df, int indice_col);
+static int validarIndiceFila(const Dataframe *df, int indice_fila);
+static void *asignarMemoria(size_t tamano, const char *mensaje_error);
+static void *reasignarMemoria(void *ptr, size_t nuevo_tamano, const char *mensaje_error);
+static void liberarMemoria(void *ptr);
+static int inicializarColumna(Columna *col, int numFilas);
+static void liberarColumna(Columna *col, int numFilas);
+static int procesarValorNumerico(const char *valor, double *resultado);
+static int procesarValorFecha(const char *valor, struct tm *fecha);
+static int compararValoresTipo(void *a, void *b, TipoDato tipo, int esta_desc);
+
+// Variables globales
 Lista listaDF = {0, NULL};
 Dataframe *dfActual = NULL;
 char promptTerminal[MAX_LINE_LENGTH] = "[?]:> ";
@@ -1129,7 +1146,6 @@ void intercambiarFilas(Dataframe *df, int fila1, int fila2) {
     df->columnas[col].esNulo[fila2] = temp_nulo;
   }
 }
-
 void ordenarDataframe(Dataframe *df, int indice_columna, int descendente) {
   TipoDato tipo_columna = df->columnas[indice_columna].tipo;
 
@@ -1199,3 +1215,4 @@ void verificarNulos(char *lineaLeida, int fila, Dataframe *df, char *resultado) 
     }
     resultado[j] = '\0';
 }
+
