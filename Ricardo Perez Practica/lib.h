@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 
 // Constantes de configuración del sistema
 #define MAX_LINE_LENGTH 4096
@@ -120,8 +121,8 @@ void delnullCLI(const char *nombre_col);
 void quarterCLI(const char *nombre_columna_fecha, const char *nombre_nueva_columna);
 
 // Funciones de procesamiento y validación
-void verificarNulos(char *line, int fila, Dataframe *df);
 int fechaValida(const char *str_fecha);
+void verificarNulos(char *lineaLeida, int fila, Dataframe *df, char *resultado);
 int compararValores(void *a, void *b, TipoDato tipo, int esta_desc);
 void tiposColumnas(Dataframe *df);
 void delcolumCLI(const char *nombre_col);
