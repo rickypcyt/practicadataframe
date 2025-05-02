@@ -179,12 +179,12 @@ int comparar(void *dato1, void *dato2, TipoDato tipo, const char *operador) {
     return 0;
 }
 
-void filterCLI(Dataframe *df, const char *nombreColumnaumna, const char *operador, void *valor) {
-    VALIDAR_DF_Y_PARAMETROS(df, nombreColumnaumna);
+void filterCLI(Dataframe *df, const char *nombreColumna, const char *operador, void *valor) {
+    VALIDAR_DF_Y_PARAMETROS(df, nombreColumna);
     VALIDAR_DF_Y_PARAMETROS(df, operador);
     VALIDAR_DF_Y_PARAMETROS(df, valor);
 
-    int indice_col = encontrarIndiceColumna(df, nombreColumnaumna);
+    int indice_col = encontrarIndiceColumna(df, nombreColumna);
     if (indice_col == -1) {
         print_error("Columna no encontrada");
         return;
@@ -279,11 +279,11 @@ void liberarMemoriaDF(Dataframe *df) {
   free(df);
 }
 
-void quarterCLI(const char *nombreColumnaumna_fecha, const char *nombre_nueva_columna) {
-    VALIDAR_DF_Y_PARAMETROS(dfActual, nombreColumnaumna_fecha);
+void quarterCLI(const char *nombreColumna_fecha, const char *nombre_nueva_columna) {
+    VALIDAR_DF_Y_PARAMETROS(dfActual, nombreColumna_fecha);
     VALIDAR_DF_Y_PARAMETROS(dfActual, nombre_nueva_columna);
 
-    int indice_col = encontrarIndiceColumna(dfActual, nombreColumnaumna_fecha);
+    int indice_col = encontrarIndiceColumna(dfActual, nombreColumna_fecha);
     if (indice_col == -1 || dfActual->columnas[indice_col].tipo != FECHA) {
         print_error("Columna de fecha no encontrada o tipo incorrecto");
         return;
@@ -428,9 +428,9 @@ void CLI() {
       delnullCLI(input + 8);
     }
     else if (strncmp(input, "delcolum ", 9) == 0) {
-      const char *nombreColumnaumna = input + 9;
-      while (*nombreColumnaumna == ' ') nombreColumnaumna++;
-      delcolumCLI(nombreColumnaumna);
+      const char *nombreColumna = input + 9;
+      while (*nombreColumna == ' ') nombreColumna++;
+      delcolumCLI(nombreColumna);
     }
     else if (strncmp(input, "df", 2) == 0 && strlen(input) > 2) {
       char *endptr;
@@ -1126,9 +1126,9 @@ void viewCLI(int n) {
   }
 }
 
-int encontrarIndiceColumna(Dataframe *df, const char *nombreColumnaumna) {
+int encontrarIndiceColumna(Dataframe *df, const char *nombreColumna) {
   for (int i = 0; i < df->numColumnas; i++) {
-    if (strcmp(df->columnas[i].nombre, nombreColumnaumna) == 0) {
+    if (strcmp(df->columnas[i].nombre, nombreColumna) == 0) {
       return i;
     }
   }
@@ -1161,13 +1161,13 @@ void ordenarDataframe(Dataframe *df, int indice_columna, int descendente) {
   }
 }
 
-void sortCLI(const char *nombreColumnaumna, int descendente) {
+void sortCLI(const char *nombreColumna, int descendente) {
   if (!dfActual) {
     print_error("No hay df cargado.");
     return;
   }
 
-  int indice_columna = encontrarIndiceColumna(dfActual, nombreColumnaumna);
+  int indice_columna = encontrarIndiceColumna(dfActual, nombreColumna);
   if (indice_columna == -1) {
     print_error("Columna no encontrada.");
     return;
@@ -1176,7 +1176,7 @@ void sortCLI(const char *nombreColumnaumna, int descendente) {
   ordenarDataframe(dfActual, indice_columna, descendente);
 
   printf(GREEN "df ordenado por columna '%s' en orden %s.\n" RESET,
-         nombreColumnaumna, descendente ? "descendente" : "ascendente");
+         nombreColumna, descendente ? "descendente" : "ascendente");
 }
 
 void verificarNulos(char *lineaLeida, int fila, Dataframe *df, char *resultado) {

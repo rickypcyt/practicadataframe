@@ -1,18 +1,6 @@
 #include "lib.h"  // Incluir las funciones definidas en lib.h
 
-int main() {
-  // Mostrar estado de los ejercicios
-  printf(GREEN "Estado de los ejercicios:\n" RESET);
-  printf("Ejercicio 1: HECHO\n");
-  printf("Ejercicio 2: HECHO\n");
-  printf("Ejercicio 3: HECHO\n");
-  printf("Ejercicio 4: HECHO\n");
-  printf("Ejercicio 5: HECHO\n");
-  printf("Ejercicio 6: HECHO\n");
-  printf("Ejercicio 7: HECHO\n");
-  printf("Ejercicio 8: HECHO\n");
-  printf("Ejercicio 9: HECHO\n");
-  printf("Ejercicio 10: HECHO\n\n");
+int main() { 
 
   // Mostrar datos del alumno
   printf(GREEN "Datos del alumno:\n" RESET);
