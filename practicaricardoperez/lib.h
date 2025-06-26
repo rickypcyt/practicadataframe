@@ -61,6 +61,7 @@ typedef struct {
     int numColumnas;            // Número de columnas en el dataframe
     int numFilas;               // Número de filas (igual para todas las columnas)
     char indice[MAX_INDICE_LENGTH];  // Nombre del dataframe
+    char nombre[51];            // Nombre único del dataframe (nuevo campo)
 } Dataframe;
 
 // Alias para tipo FECHA: 'Fecha' alias de 'struct tm' (#include <time.h>)
@@ -97,7 +98,7 @@ void print_error(const char *mensaje_error);
 
 // Funciones de carga y creación de dataframes
 void contarFilasYColumnas(const char *nombre_archivo, int *numFilas, int *numColumnas);
-void loadearCSV(const char *nombre_archivo);
+void loadearCSV(const char *nombre_archivo, char sep);
 int crearDF(Dataframe *df, int numColumnas, int numFilas, const char *nombre_df);
 void liberarMemoriaDF(Dataframe *df);
 
@@ -110,10 +111,13 @@ void leerFilas(FILE *file, Dataframe *df, int numFilas, int numColumnas);
 // Funciones de manipulación de dataframes
 void agregarDF(Dataframe *nuevoDF);
 void cambiarDF(Lista *lista, int indice);
+void cambiarDFPorNombre(Lista *lista, const char *nombre);
+int nombreDFUnico(const Lista *lista, const char *nombre);
 
 // Funciones de interfaz de usuario
 void metaCLI(void);
 void viewCLI(int n);
+void viewNegativeCLI(int n);
 void sortCLI(const char *nombre_col, int esta_desc);
 void saveCLI(const char *nombre_archivo);
 void filterCLI(Dataframe *df, const char *nombre_columna, const char *operador, void *valor);
@@ -133,5 +137,30 @@ void procesarPorLotes(FILE *file, Dataframe *df, int tamanoLote);
 int encontrarIndiceColumna(Dataframe *df, const char *nombre_columna);
 void intercambiarFilas(Dataframe *df, int fila1, int fila2);
 int comparar(void *dato1, void *dato2, TipoDato tipo, const char *operador);
+
+// Funciones de copia seguras y reutilizables
+/**
+ * Copia una columna completa de origen a destino, incluyendo datos y estados nulos.
+ * @param destino Columna destino
+ * @param origen Columna origen (const)
+ * @param numFilas Número de filas a copiar
+ * @return 1 si la copia fue exitosa, 0 en caso de error
+ */
+int copiarColumna(Columna *destino, const Columna *origen, int numFilas);
+
+/**
+ * Copia una fila completa de un dataframe origen a uno destino.
+ * @param destino Dataframe destino
+ * @param origen Dataframe origen (const)
+ * @param fila_origen Índice de la fila en el dataframe origen
+ * @param fila_destino Índice de la fila en el dataframe destino
+ * @return 1 si la copia fue exitosa, 0 en caso de error
+ */
+int copiarFila(Dataframe *destino, const Dataframe *origen, int fila_origen, int fila_destino);
+
+void prefixCLI(const char *nombre_col, int n, const char *nombre_nueva_col);
+void listCLI(void);
+
+void addCLI(const char *nombre_archivo, char sep);
 
 #endif
