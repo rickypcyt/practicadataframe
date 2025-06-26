@@ -109,7 +109,7 @@ void leerEncabezados(FILE *file, Dataframe *df, int numColumnas);
 void leerFilas(FILE *file, Dataframe *df, int numFilas, int numColumnas);
 
 // Funciones de manipulación de dataframes
-void agregarDF(Dataframe *nuevoDF);
+int agregarDF(Dataframe *nuevoDF);
 void cambiarDF(Lista *lista, int indice);
 void cambiarDFPorNombre(Lista *lista, const char *nombre);
 int nombreDFUnico(const Lista *lista, const char *nombre);

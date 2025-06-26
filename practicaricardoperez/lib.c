@@ -1,20 +1,5 @@
 #include "lib.h"
 
-static int expandirMemoriaDataframe(Dataframe *df, int nuevoTamano);
-static void procesarLineaCSV(const char *linea, Dataframe *df, int fila);
-static int validarParametros(const void *param, const char *nombre_param);
-static int validarDataframe(const Dataframe *df);
-static int validarIndiceColumna(const Dataframe *df, int indice_col);
-static int validarIndiceFila(const Dataframe *df, int indice_fila);
-static void *asignarMemoria(size_t tamano, const char *mensaje_error);
-static void *reasignarMemoria(void *ptr, size_t nuevo_tamano, const char *mensaje_error);
-static void liberarMemoria(void *ptr);
-static int inicializarColumna(Columna *col, int numFilas);
-static void liberarColumna(Columna *col, int numFilas);
-static int procesarValorNumerico(const char *valor, double *resultado);
-static int procesarValorFecha(const char *valor, struct tm *fecha);
-static int compararValoresTipo(void *a, void *b, TipoDato tipo, int esta_desc);
-
 Lista listaDF = {0, NULL};
 Dataframe *dfActual = NULL;
 char promptTerminal[MAX_LINE_LENGTH] = "[?]:> ";
@@ -214,24 +199,25 @@ void liberarMemoriaDF(Dataframe *df) {
     free(df);
 }
 
-void agregarDF(Dataframe *nuevoDF) {
+int agregarDF(Dataframe *nuevoDF) {
     if (!nuevoDF) {
         print_error("Dataframe inválido");
-        return;
+        return 0;
     }
     if (!nombreDFUnico(&listaDF, nuevoDF->nombre)) {
         print_error("Ya existe un dataframe con ese nombre");
         liberarMemoriaDF(nuevoDF);
-        return;
+        return 0;
     }
     Nodo *nuevoNodo = malloc(sizeof(Nodo));
     if (!nuevoNodo) {
         print_error("Fallo en asignación de memoria para nodo");
-        return;
+        return 0;
     }
     nuevoNodo->df = nuevoDF;
     nuevoNodo->siguiente = listaDF.primero;
     listaDF.primero = nuevoNodo;
+    return 1;
 }
 
 void contarFilasYColumnas(const char *nombre_archivo, int *numFilas, int *numColumnas) {
@@ -346,12 +332,18 @@ int crearDF(Dataframe *df, int numColumnas, int numFilas, const char *nombre_df)
 }
 
 void loadearCSV(const char *nombre_archivo, char sep) {
-    VALIDAR_DF_Y_PARAMETROS(nombre_archivo, nombre_archivo);
+    if (!nombre_archivo) {
+        print_error("Nombre de archivo inválido");
+        return;
+    }
+    
     FILE *file = fopen(nombre_archivo, "r");
     if (!file) {
         print_error("No se puede abrir el archivo");
         return;
     }
+    
+    // Leer primera línea para contar columnas
     char *headerLine = NULL;
     size_t len = 0;
     if (getline(&headerLine, &len, file) == -1) {
@@ -360,76 +352,158 @@ void loadearCSV(const char *nombre_archivo, char sep) {
         fclose(file);
         return;
     }
+    
+    // Contar columnas correctamente
     int numColumnas = 1;
     for (char *p = headerLine; *p; ++p) {
         if (*p == sep) numColumnas++;
     }
+    
     if (numColumnas > MAX_COLUMNS) {
         print_error("Demasiadas columnas");
         free(headerLine);
         fclose(file);
         return;
     }
-    // Buscar si ya existe un dataframe con el nombre por defecto
+    
+    // Contar filas en el archivo
+    rewind(file);
+    int numFilas = 0;
+    char *tempLine = NULL;
+    size_t tempLen = 0;
+    while (getline(&tempLine, &tempLen, file) != -1) {
+        numFilas++;
+    }
+    free(tempLine);
+    
+    // Ajustar número de filas (restar 1 por el header)
+    numFilas = (numFilas > 0) ? numFilas - 1 : 0;
+    
+    if (numFilas > MAX_ROWS) {
+        print_error("Demasiadas filas");
+        free(headerLine);
+        fclose(file);
+        return;
+    }
+    
+    // Generar nombre único para el nuevo dataframe
     char nombre_df[51];
     int intento = 0;
     do {
-        snprintf(nombre_df, sizeof(nombre_df), "df%d", listaDF.numDFs + intento);
+        snprintf(nombre_df, sizeof(nombre_df), "df%d", intento);
         intento++;
     } while (!nombreDFUnico(&listaDF, nombre_df));
     
-    // Si el nombre encontrado es df0, df1, etc., verificar si ya existe un dataframe con ese nombre
-    if (intento == 1) { // Si es el primer intento (df0, df1, etc.)
-        Nodo *actual = listaDF.primero;
-        while (actual) {
-            const char *nombre_actual = (actual->df->nombre[0] != '\0') ? actual->df->nombre : actual->df->indice;
-            if (strcmp(nombre_actual, nombre_df) == 0) {
-                // Ya existe un dataframe con este nombre, cambiar a él
-                dfActual = actual->df;
-                actualizarPrompt(dfActual);
-                printf(GREEN "Cambiado a dataframe existente %s\n" RESET, nombre_df);
-                free(headerLine);
-                fclose(file);
-                return;
-            }
-            actual = actual->siguiente;
-        }
-    }
-    
-    Dataframe *nuevo_df = crearNuevoDataframe(numColumnas, BATCH_SIZE, nombre_df);
+    // Crear dataframe con dimensiones correctas
+    Dataframe *nuevo_df = crearNuevoDataframe(numColumnas, numFilas, nombre_df);
     if (!nuevo_df) {
         free(headerLine);
         fclose(file);
         return;
     }
-    // Leer encabezados con separador
+    
+    // Leer encabezados
     char *token = strtok(headerLine, &sep);
     int columnaActual = 0;
     while (token && columnaActual < numColumnas) {
-        strncpy(nuevo_df->columnas[columnaActual].nombre, token, 29);
+        // Limpiar espacios y caracteres de nueva línea
+        char *clean_token = token;
+        while (*clean_token == ' ' || *clean_token == '\t' || *clean_token == '\r' || *clean_token == '\n') {
+            clean_token++;
+        }
+        char *end = clean_token + strlen(clean_token) - 1;
+        while (end > clean_token && (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n')) {
+            end--;
+        }
+        *(end + 1) = '\0';
+        
+        strncpy(nuevo_df->columnas[columnaActual].nombre, clean_token, 29);
         nuevo_df->columnas[columnaActual].nombre[29] = '\0';
         columnaActual++;
         token = strtok(NULL, &sep);
     }
     free(headerLine);
-    // Procesar por lotes con separador
-    // (Aquí deberías adaptar procesarPorLotes y verificarNulos para usar sep, pero por simplicidad lo dejamos así)
-    procesarPorLotes(file, nuevo_df, BATCH_SIZE); // <-- Si quieres soporte total, adapta esta función también
-    fclose(file);
-    if (nuevo_df->numFilas > 0) {
-        for (int columnaActual = 0; columnaActual < nuevo_df->numColumnas; columnaActual++) {
-            char **nuevos_datos = realloc(nuevo_df->columnas[columnaActual].datos,
-                                          nuevo_df->numFilas * sizeof(char *));
-            EstadoNulo *nuevos_nulos = realloc(nuevo_df->columnas[columnaActual].esNulo,
-                                               nuevo_df->numFilas * sizeof(EstadoNulo));
-            if (!nuevos_datos || !nuevos_nulos) {
-                liberarRecursosEnError(nuevo_df, "Error al redimensionar memoria");
-                return;
-            }
-            nuevo_df->columnas[columnaActual].datos = nuevos_datos;
-            nuevo_df->columnas[columnaActual].esNulo = nuevos_nulos;
+    
+    // Leer datos
+    rewind(file);
+    // Saltar header
+    char *skipHeader = NULL;
+    size_t skipLen = 0;
+    getline(&skipHeader, &skipLen, file);
+    free(skipHeader);
+    
+    int filaActual = 0;
+    char *linea = NULL;
+    size_t lenLinea = 0;
+    
+    while (getline(&linea, &lenLinea, file) != -1 && filaActual < numFilas) {
+        // Procesar línea con separador correcto
+        char *line_copy = strdup(linea);
+        if (!line_copy) {
+            free(linea);
+            liberarRecursosEnError(nuevo_df, "Error al asignar memoria para línea");
+            fclose(file);
+            return;
         }
+        
+        // Parsear línea manualmente para manejar campos vacíos
+        int col = 0;
+        char *start = line_copy;
+        char *end = start;
+        
+        while (col < numColumnas && *start) {
+            // Encontrar el final del campo actual
+            end = start;
+            while (*end && *end != sep) {
+                end++;
+            }
+            
+            // Extraer el campo
+            char temp_char = *end;
+            *end = '\0';
+            
+            // Limpiar espacios
+            char *clean_token = start;
+            while (*clean_token == ' ' || *clean_token == '\t' || *clean_token == '\r' || *clean_token == '\n') {
+                clean_token++;
+            }
+            char *clean_end = clean_token + strlen(clean_token) - 1;
+            while (clean_end > clean_token && (*clean_end == ' ' || *clean_end == '\t' || *clean_end == '\r' || *clean_end == '\n')) {
+                clean_end--;
+            }
+            *(clean_end + 1) = '\0';
+            
+            if (strlen(clean_token) > 0) {
+                nuevo_df->columnas[col].datos[filaActual] = strdup(clean_token);
+                nuevo_df->columnas[col].esNulo[filaActual] = NO_NULO;
+            } else {
+                nuevo_df->columnas[col].datos[filaActual] = NULL;
+                nuevo_df->columnas[col].esNulo[filaActual] = NULO;
+            }
+            
+            // Restaurar el carácter original y avanzar
+            *end = temp_char;
+            start = end + 1;
+            col++;
+        }
+        
+        // Rellenar columnas faltantes con NULL
+        while (col < numColumnas) {
+            nuevo_df->columnas[col].datos[filaActual] = NULL;
+            nuevo_df->columnas[col].esNulo[filaActual] = NULO;
+            col++;
+        }
+        
+        free(line_copy);
+        filaActual++;
     }
+    
+    free(linea);
+    fclose(file);
+    
+    // Ajustar número final de filas
+    nuevo_df->numFilas = filaActual;
+    
     dfActual = nuevo_df;
     agregarDF(nuevo_df);
     listaDF.numDFs++;
@@ -558,6 +632,8 @@ void inicializarLista() {
 }
 
 void cambiarDF(Lista *lista, int indice) {
+    (void)lista;  // Suppress unused parameter warning
+    (void)indice; // Suppress unused parameter warning
     print_error("Este comando ha sido reemplazado. Use el nombre del dataframe.");
 }
 
@@ -737,18 +813,13 @@ void CLI() {
             long indice = strtol(input + 2, &endptr, 10);
             if (*endptr == '\0' && indice >= 0 && indice < listaDF.numDFs) {
                 // Buscar el dataframe por índice en la lista
-                int indiceInverso = listaDF.numDFs - 1 - indice;
                 Nodo *nodoActual = listaDF.primero;
-                for (int i = 0; i < indiceInverso; i++) {
-                    if (nodoActual == NULL) {
-                        print_error("Dataframe no encontrado.");
-                        return;
-                    }
+                for (int i = 0; i < indice && nodoActual != NULL; i++) {
                     nodoActual = nodoActual->siguiente;
                 }
                 if (nodoActual == NULL || nodoActual->df == NULL) {
                     print_error("Dataframe no encontrado.");
-                    return;
+                    continue;
                 }
                 dfActual = nodoActual->df;
                 actualizarPrompt(dfActual);
@@ -1208,7 +1279,7 @@ void viewCLI(int n) {
         for (int i = total_filas - 1; i >= total_filas - filas_a_mostrar; i--) {
             for (int j = 0; j < dfActual->numColumnas; j++) {
                 if (dfActual->columnas[j].esNulo[i]) {
-                    printf("NULL");
+                    printf("1");
                 } else {
                     printf("%s", (char *)dfActual->columnas[j].datos[i]);
                 }
@@ -1594,7 +1665,20 @@ void addCLI(const char *nombre_archivo, char sep) {
     char *token = strtok(headerLine, &sep);
     int columnaActual = 0;
     while (token && columnaActual < numColumnasArchivo) {
-        if (strcmp(token, dfActual->columnas[columnaActual].nombre) != 0) {
+        // Limpiar espacios y caracteres de nueva línea del token
+        char *clean_token = token;
+        while (*clean_token == ' ' || *clean_token == '\t' || *clean_token == '\r' || *clean_token == '\n') {
+            clean_token++;
+        }
+        char *end = clean_token + strlen(clean_token) - 1;
+        while (end > clean_token && (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n')) {
+            end--;
+        }
+        *(end + 1) = '\0';
+        
+        if (strcmp(clean_token, dfActual->columnas[columnaActual].nombre) != 0) {
+            printf("DEBUG: Columna %d - Archivo: '%s' vs DataFrame: '%s'\n", 
+                   columnaActual, clean_token, dfActual->columnas[columnaActual].nombre);
             print_error("Los nombres de las columnas deben coincidir");
             free(headerLine);
             fclose(file);
@@ -1653,10 +1737,17 @@ void addCLI(const char *nombre_archivo, char sep) {
     }
     // Leer y añadir nuevas filas
     rewind(file);
-    getline(&headerLine, &len, file); // Saltar encabezados
+    // Saltar encabezados
+    char *tempHeader = NULL;
+    size_t tempLen = 0;
+    getline(&tempHeader, &tempLen, file);
+    free(tempHeader);
+    
     int filaDestino = dfActual->numFilas;
-    while (getline(&linea, &lenLinea, file) != -1 && filaDestino < dfActual->numFilas + filasArchivo) {
-        char *token = strtok(linea, &sep);
+    char *nuevaLinea = NULL;
+    size_t nuevaLenLinea = 0;
+    while (getline(&nuevaLinea, &nuevaLenLinea, file) != -1 && filaDestino < dfActual->numFilas + filasArchivo) {
+        char *token = strtok(nuevaLinea, &sep);
         int col = 0;
         while (token && col < dfActual->numColumnas) {
             if (token[0] != '\0' && token[0] != '\n' && token[0] != '\r') {
@@ -1671,8 +1762,7 @@ void addCLI(const char *nombre_archivo, char sep) {
         }
         filaDestino++;
     }
-    free(headerLine);
-    free(linea);
+    free(nuevaLinea);
     fclose(file);
     liberarMemoriaDF(dfActual);
     dfActual = nuevo_df;
